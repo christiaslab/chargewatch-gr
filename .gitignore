@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets — never commit real values
+.env
+.env.*
+!.env.example
+*-key.json
+*credentials*.json
+service-account*.json
+
+# Data — raw lives in GCS, never in git
+data/
+*.parquet
+*.duckdb
+*.json.zip
+
+# Local
+.DS_Store
+.idea/
+lifecycle.json
+
+# Personal — never published
+LEARNINGS.md
+CLAUDE.local.md
+private/

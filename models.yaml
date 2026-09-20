@@ -1,0 +1,39 @@
+# Role → model mapping.
+#
+# Rules:
+#   - Pin EXACT versions. Never use "-latest" aliases: evals become meaningless if the
+#     model changes underneath them.
+#   - All models are served through Vertex AI (one auth, one billing, one SDK).
+#   - Change a model only on eval evidence, and record the before/after accuracy.
+#
+# TODO before first agent run: verify these IDs exist in europe-west1 with
+#   gcloud ai models list --region=europe-west1
+# and confirm Claude availability in Model Garden for that region. Gemini is available;
+# Claude region coverage is narrower. See docs/decisions.md #9.
+
+provider: vertex
+region: europe-west1
+
+roles:
+
+  nl_to_sql:
+    # High frequency, small schema (~6 gold tables). Start cheapest, escalate only if
+    # the golden set says so. Target: >=85% execution accuracy.
+    model: gemini-3.1-flash-lite
+    temperature: 0
+    max_output_tokens: 2048
+
+  anomaly_investigator:
+    # Multi-step tool use. Reasoning quality is the entire product here.
+    # Runs rarely (~20/month), so cost is noise.
+    model: claude-sonnet-4-6
+    temperature: 0.2
+    max_output_tokens: 8192
+
+  report_writer:
+    # ~4 runs/month. Writing quality matters, cost does not.
+    model: claude-sonnet-4-6
+    temperature: 0.4
+    max_output_tokens: 16384
+
+# Ingestion and diffing use NO model. They are deterministic. Do not add one.
