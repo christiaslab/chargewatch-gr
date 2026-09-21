@@ -87,3 +87,101 @@ while there is one environment.
 
 *Reverses if:* a second environment (staging) is needed. That is the trigger — at which
 point it solves a real problem and makes a better story.
+
+---
+
+*#13-15 added 2026-09-21 (CareerOS update). They change the order of work and the shape
+of the agent layer; #1-12 above are untouched.*
+
+### 13. Semantic layer: lightweight, no new service
+The NL→SQL agent should answer against *metrics*, not tables. "Uptime by operator" has
+one correct definition — AC/DC normalised, on the `(location_id, evse_uid)` grain,
+`publish == false` excluded — and that definition belongs in one place, versioned, not
+re-derived by a model on every question.
+
+Metric and dimension definitions live **in the repo**, over the existing gold schema in
+Neon. Permissions stay exactly where #7 put them: the read-only `agent_ro` role. No new
+database, no new deployment, no new surface to secure.
+
+Two candidate implementations, to be decided at M4 on evidence:
+- **Boring Semantic Layer** — Ibis-based, compiles metrics to SQL, already speaks MCP,
+  which makes #14 close to free.
+- **Plain YAML definitions + Postgres views** — fewer moving parts, no dependency, but
+  MCP exposure is then hand-rolled.
+
+*Rejected:* Cube and similar server-shaped semantic layers. They mean a second
+long-running service, its own container, its own cost and its own failure mode, for a
+project whose whole cost argument is one Cloud Run service inside the free tier.
+
+*Consequence, and the reason this lands at M4 rather than after the agent:* the NL→SQL
+agent (M5) targets metrics, and the golden set of 50 is written **against metric
+definitions**. Building the agent first would mean rewriting every eval once the
+semantic layer arrived — and evals that get rewritten to match the system stop being
+evals (see #10).
+
+*Reverses if:* the metric surface outgrows what a repo of definitions can express —
+realistically, multiple consumers needing caching and pre-aggregation. Not before there
+are paying consumers.
+
+### 14. MCP server over the semantic layer, in place of the anomaly investigator
+The M6 slot previously held a multi-step anomaly-investigation agent. It now holds an
+MCP server that exposes the semantic layer to *any* agent.
+
+Reasons:
+- **It is near-free once #13 exists.** The semantic layer already resolves a metric
+  request to safe SQL under `agent_ro`. MCP is a protocol wrapper over that, not new
+  capability — and if the Boring Semantic Layer option wins, it is largely built in.
+- **It is the natural shape of Phase 3.** The monetisation ladder's paid-API rung
+  assumed a REST API and a dashboard nobody asked for. The realistic version is that
+  the customer brings their own agent and points it at this archive. An MCP endpoint
+  is that product, and it is also the most legible demonstration of the archive's
+  value: the data is the moat, the interface is thin.
+- The anomaly investigator needs *months of transitions* before there are anomalies
+  worth investigating. It was scheduled before the data to feed it would exist.
+
+The anomaly investigator moves to "later" in the roadmap. Its `anomaly_investigator`
+role stays pinned in `models.yaml` — unused, but pinned, so that reviving it does not
+start with a model-selection argument.
+
+*Note on #9's open item:* that entry ties the "confirm Claude availability in
+`europe-west1`" check to building the anomaly agent. With the anomaly agent deferred,
+the first Claude consumer is the **report agent**, so the check must happen before that
+instead. #9 itself is left as written.
+
+*Reverses if:* MCP loses adoption as an integration standard, in which case the same
+semantic layer gets a thin HTTP API instead — the layer is the asset, the protocol is
+not.
+
+### 15. Ingestion isolation and observability belong to M1
+Observability was previously one line item late in the plan, bundled with Langfuse. That
+conflated two unrelated things: *is the archive still being written* and *what did an
+agent cost*. The first is existential and must exist on day one; the second is a nicety
+that matters only once agents run.
+
+M1 therefore owns ingestion isolation and ingestion observability:
+
+- **A dead-man's switch.** Cloud Monitoring alerts when no new object has landed in the
+  raw prefix for ~30 minutes. The failure mode of a logger is *silence*, not an error —
+  a crashed container raises nothing, and nothing is exactly what an error-based alert
+  reports. The alert must fire on absence, and must be verified once by pausing the
+  Scheduler job and waiting for the email.
+- **GCS is the only dependency in the write path.** No Neon, no DuckLake, no validation
+  before the write. The logger fetches bytes and stores bytes. This is why contracts sit
+  at M3, downstream of raw: when the feed's schema changes — and it will — validation
+  fails in a batch job that can be re-run over retained raw data, while ingestion keeps
+  capturing. A validator in the write path converts a schema change into permanent data
+  loss.
+- **Scheduler retries, with idempotent object names** derived from the fetch timestamp,
+  so a retried run overwrites its own slot rather than producing a duplicate snapshot.
+- **A ~5 €/month budget alert on gross spend.** Alert only, never a spend cap: GCP's cap
+  enforcement *pauses services*, and a paused logger is permanently lost snapshots. Gross
+  rather than net, or trial credits mask all spend until they run out.
+- **ENTSO-E is out of scope for M1.** Wholesale prices are backfillable from the
+  Transparency Platform at any time. Only the Μ.Υ.Φ.Α.Η. dynamic feed is perishable, and
+  M1 should contain nothing that is not perishable.
+
+**M7 keeps only agent tracing and cost** — Langfuse, cost per agent run, eval-accuracy
+history. Nothing in M7 watches the logger.
+
+*Reverses if:* nothing. This is the direct application of the project's first rule — when
+in doubt, favour keeping the logger running.

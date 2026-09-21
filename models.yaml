@@ -24,6 +24,10 @@ roles:
     max_output_tokens: 2048
 
   anomaly_investigator:
+    # PINNED BUT UNUSED — deferred to "Later" in docs/roadmap.md; its milestone slot
+    # went to the MCP server (docs/decisions.md #14). Needs months of transitions before
+    # there are anomalies worth investigating. Kept pinned so that reviving it does not
+    # start with a model-selection argument.
     # Multi-step tool use. Reasoning quality is the entire product here.
     # Runs rarely (~20/month), so cost is noise.
     model: claude-sonnet-4-6

@@ -24,9 +24,16 @@ operators stamp every record with the same timestamp. See `docs/data-notes.md`.
 ```
 Cloud Scheduler ──(every 10 min)──→ Cloud Run Service
                                           │
-                        fetch → validate → raw to GCS (immutable)
+                              fetch → raw to GCS (immutable)
+                                          │
+                     ─────────────────────┴─────────────────────
+                      M1 ends here. GCS is the only dependency in
+                      the write path — nothing below can stop the
+                      archive from being written.
                                           │
                         DuckDB ATTACH DuckLake (catalog: Neon Postgres)
+                                          │
+                      validate against contracts (orphans → quarantine)
                                           │
                               Polars: diff vs current state
                                           │
@@ -34,7 +41,9 @@ Cloud Scheduler ──(every 10 min)──→ Cloud Run Service
                                           ↓
                         SQLMesh: silver → gold ──→ Neon (gold schema)
                                                         ↑
-                                       dashboard + NL→SQL agent (read-only)
+                                 semantic layer: metric definitions (agent_ro, read-only)
+                                                        ↑
+                                  dashboard + NL→SQL agent · MCP server (any agent)
 ```
 
 ## Docs
@@ -44,7 +53,7 @@ Cloud Scheduler ──(every 10 min)──→ Cloud Run Service
 | `CLAUDE.md` | Working context and hard rules |
 | `docs/decisions.md` | Every locked technical choice with its reason |
 | `docs/data-notes.md` | Measured findings from both feeds |
-| `docs/roadmap.md` | 10-week plan and the business thesis |
+| `docs/roadmap.md` | Milestones, the M1 definition of done, and the business thesis |
 
 ## Setup
 

@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# Strip agent trailers and trailing blank lines from the commit message.
+# Portable across macOS/Linux: rewrites via a temp file, no `sed -i`.
+set -eu
+
+msg="$1"
+tmp="$(mktemp)"
+
+awk '
+  tolower($0) ~ /^co-authored-by: claude/ { next }
+  tolower($0) ~ /^claude-session:/       { next }
+  { lines[++n] = $0 }
+  END {
+    while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+    for (i = 1; i <= n; i++) print lines[i]
+  }
+' "$msg" > "$tmp"
+
+mv "$tmp" "$msg"
