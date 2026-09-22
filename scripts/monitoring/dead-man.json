@@ -1,0 +1,27 @@
+{
+  "displayName": "chargewatch-raw-ingestion-silence",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "No successful WriteObject calls to the raw bucket for 30 min",
+      "conditionAbsent": {
+        "filter": "metric.type=\"storage.googleapis.com/api/request_count\" AND resource.type=\"gcs_bucket\" AND resource.label.bucket_name=\"__BUCKET__\" AND metric.label.method=\"WriteObject\" AND metric.label.response_code=\"OK\"",
+        "duration": "1800s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
+      }
+    }
+  ],
+  "notificationChannels": [
+    "__NOTIFICATION_CHANNEL__"
+  ],
+  "documentation": {
+    "mimeType": "text/markdown",
+    "content": "The logger's failure mode is silence, not an error: this fires when the raw bucket has gone 30 minutes with no successful `WriteObject` call, meaning the archive has stopped growing even though nothing necessarily crashed. Check Cloud Run request logs for the `chargewatch-logger` service first, then Cloud Scheduler job history for `chargewatch-logger-dynamic` / `chargewatch-logger-static`.\n\nConfirm in Metrics Explorer that the method label for the logger's uploads is WriteObject; if it differs, edit the filter in scripts/monitoring/dead-man.json and re-run setup-gcp.sh.\n\nThis policy is only trusted once both halves of the verification in `docs/specs/m1-logger.md` §8/§11 have been done by hand: pause the `chargewatch-logger-dynamic` Scheduler job and confirm this alert fires within ~30 minutes, then resume it and confirm the incident closes."
+  }
+}

@@ -7,6 +7,8 @@
 #      100% Forecasted. In Scope, UNCHECK the Savings boxes so the budget tracks GROSS
 #      spend — otherwise trial credits mask it and no alert ever fires.
 #   3. gcloud auth login
+#   4. gcloud components install beta -- needed for `gcloud beta monitoring channels`;
+#      there is no GA command group for notification channels yet.
 #
 # Everything below is idempotent: safe to re-run.
 
@@ -17,6 +19,11 @@ REGION="${REGION:-europe-west1}"
 BUCKET="${BUCKET:-chargewatch-raw-gr}"
 SA_NAME="chargewatch-run"
 SA="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+SCHEDULER_SA_NAME="chargewatch-scheduler"
+SCHEDULER_SA="${SCHEDULER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Required, never hardcoded: the address the dead-man switch emails on silence.
+: "${ALERT_EMAIL:?set ALERT_EMAIL to the address that receives the ingestion-silence alert}"
 
 echo "==> project=${PROJECT_ID} region=${REGION} bucket=${BUCKET}"
 
@@ -31,7 +38,8 @@ gcloud services enable \
   aiplatform.googleapis.com \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
-  secretmanager.googleapis.com
+  secretmanager.googleapis.com \
+  monitoring.googleapis.com
 
 echo "==> bucket"
 # --uniform-bucket-level-access : all access via IAM, no legacy per-object ACLs
@@ -56,7 +64,7 @@ JSON
 gcloud storage buckets update "gs://${BUCKET}" --lifecycle-file="${LIFECYCLE}"
 rm -f "${LIFECYCLE}"
 
-echo "==> service account"
+echo "==> service account (chargewatch-run)"
 if ! gcloud iam service-accounts describe "${SA}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${SA_NAME}" \
     --display-name="ChargeWatch Cloud Run"
@@ -66,24 +74,123 @@ fi
 
 # NOTE: storage role is bound to the BUCKET, not the project. Project-level binding
 # would grant access to every bucket ever created here.
-echo "==> IAM"
+echo "==> IAM (chargewatch-run — least privilege)"
+# objectCreator only: the logger can create a new object but can never overwrite or
+# delete an existing one. This is what makes "raw is immutable" (CLAUDE.md) hold at
+# the IAM layer, not just by convention.
 gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
   --member="serviceAccount:${SA}" \
-  --role="roles/storage.objectAdmin"
+  --role="roles/storage.objectCreator"
 
-# Vertex has no resource-level binding, so this one is project-scoped by necessity.
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-  --member="serviceAccount:${SA}" \
-  --role="roles/aiplatform.user" \
-  --condition=None
+# objectAdmin also allowed delete/overwrite; drop it now that objectCreator covers the
+# only permission the logger needs. Check before removing rather than swallowing the
+# remove's exit code — a swallowed failure here could as easily be a typo or a
+# permission problem as a genuinely absent binding.
+OBJECT_ADMIN_BOUND="$(gcloud storage buckets get-iam-policy "gs://${BUCKET}" \
+  --flatten="bindings[].members" \
+  --filter="bindings.role=roles/storage.objectAdmin AND bindings.members=serviceAccount:${SA}" \
+  --format="value(bindings.role)")"
+if [[ -n "${OBJECT_ADMIN_BOUND}" ]]; then
+  gcloud storage buckets remove-iam-policy-binding "gs://${BUCKET}" \
+    --member="serviceAccount:${SA}" \
+    --role="roles/storage.objectAdmin"
+else
+  echo "    objectAdmin binding already absent, skipping"
+fi
+
+# No agent in the ingestion path (CLAUDE.md) — the logger never calls Vertex AI, so
+# this project-level grant only widened the blast radius of a leaked identity. Drop it.
+# This is the only project-level IAM write in the script, so nothing earlier proves the
+# caller even has the permission — check first instead of masking remove's exit code,
+# so a real failure (PERMISSION_DENIED, a typo) surfaces instead of being read as
+# "already absent".
+AIPLATFORM_BOUND="$(gcloud projects get-iam-policy "${PROJECT_ID}" \
+  --flatten="bindings[].members" \
+  --filter="bindings.role=roles/aiplatform.user AND bindings.members=serviceAccount:${SA}" \
+  --format="value(bindings.role)")"
+if [[ -n "${AIPLATFORM_BOUND}" ]]; then
+  gcloud projects remove-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${SA}" \
+    --role="roles/aiplatform.user" \
+    --condition=None
+else
+  echo "    aiplatform.user binding already absent, skipping"
+fi
 
 # Do NOT create a service-account key file. Cloud Run assumes this identity directly.
+
+echo "==> service account (chargewatch-scheduler)"
+if ! gcloud iam service-accounts describe "${SCHEDULER_SA}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create "${SCHEDULER_SA_NAME}" \
+    --display-name="ChargeWatch Cloud Scheduler"
+else
+  echo "    service account already exists, skipping create"
+fi
+
+# No project- or bucket-level roles for this identity on purpose: its only permission
+# is roles/run.invoker, scoped to the chargewatch-logger service, bound in deploy.sh
+# (§7) because that binding needs the service to exist first.
+
+echo "==> notification channel (email: ${ALERT_EMAIL})"
+# `channels` has no GA command group yet (checked: `gcloud monitoring channels --help`
+# fails, `gcloud beta monitoring channels --help` exists) — beta is the only option.
+# Look up by the label gcloud itself indexes email channels on, so re-runs don't
+# create a duplicate.
+CHANNEL_NAME="$(gcloud beta monitoring channels list \
+  --filter="type=\"email\" AND labels.email_address=\"${ALERT_EMAIL}\"" \
+  --format="value(name)" | head -n1)"
+if [[ -z "${CHANNEL_NAME}" ]]; then
+  CHANNEL_NAME="$(gcloud beta monitoring channels create \
+    --display-name="ChargeWatch alerts (${ALERT_EMAIL})" \
+    --type=email \
+    --channel-labels="email_address=${ALERT_EMAIL}" \
+    --format="value(name)")"
+  echo "    created channel ${CHANNEL_NAME}"
+else
+  echo "    channel already exists: ${CHANNEL_NAME}"
+fi
+
+echo "==> alert policy: dead-man's switch"
+# `policies` does have a GA command group (checked: `gcloud monitoring policies --help`),
+# unlike `channels` above, so no alpha/beta fallback is needed here.
+# A metric-absence condition never fires for a series that has never reported at all —
+# the policy is inert until the first successful write lands after deploy.sh runs. Do
+# not test it (e.g. by pausing the Scheduler job) before that first write has happened.
+# The `method="WriteObject"` label below is unverified until then too: confirm it in
+# Metrics Explorer against real traffic (see dead-man.json's own documentation.content).
+POLICY_DISPLAY_NAME="chargewatch-raw-ingestion-silence"
+POLICY_FILE="$(dirname "${BASH_SOURCE[0]}")/monitoring/dead-man.json"
+POLICY_TMP="$(mktemp)"
+trap 'rm -f "${POLICY_TMP}"' EXIT
+sed -e "s|__NOTIFICATION_CHANNEL__|${CHANNEL_NAME}|g" \
+    -e "s|__BUCKET__|${BUCKET}|g" \
+    "${POLICY_FILE}" > "${POLICY_TMP}"
+
+EXISTING_POLICY="$(gcloud monitoring policies list \
+  --filter="displayName=\"${POLICY_DISPLAY_NAME}\"" \
+  --format="value(name)" | head -n1)"
+if [[ -z "${EXISTING_POLICY}" ]]; then
+  gcloud monitoring policies create --policy-from-file="${POLICY_TMP}"
+  echo "    created alert policy"
+else
+  gcloud monitoring policies update "${EXISTING_POLICY}" --policy-from-file="${POLICY_TMP}"
+  echo "    updated alert policy ${EXISTING_POLICY}"
+fi
 
 echo "==> verify"
 gcloud storage buckets describe "gs://${BUCKET}"
 
+echo "==> verify: chargewatch-run holds only objectCreator on the bucket"
+gcloud storage buckets get-iam-policy "gs://${BUCKET}"
+
+echo "==> verify: chargewatch-run holds no project-level roles"
+gcloud projects get-iam-policy "${PROJECT_ID}" \
+  --flatten="bindings[].members" \
+  --filter="bindings.members=serviceAccount:${SA}" \
+  --format="table(bindings.role)"
+
 echo
 echo "Done. Smoke test:"
 echo "  curl -sSO https://electrokinisi.yme.gov.gr/public/static_files/GR.IDRO.dynamic.data.latest.json.zip"
-echo "  gcloud storage cp GR.IDRO.dynamic.data.latest.json.zip gs://${BUCKET}/raw/smoke/"
-echo "  gcloud storage ls -l gs://${BUCKET}/raw/smoke/"
+echo "  gcloud storage cp GR.IDRO.dynamic.data.latest.json.zip gs://${BUCKET}/smoke/"
+echo "  gcloud storage ls -l gs://${BUCKET}/smoke/"
