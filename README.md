@@ -57,7 +57,9 @@ Cloud Scheduler ──(every 10 min)──→ Cloud Run Service
 
 ## Setup
 
-Manual prerequisites and the full script are in `scripts/setup-gcp.sh`.
+Manual prerequisites and the full script are in `scripts/setup-gcp.sh`. Once that has
+run, `scripts/deploy.sh` builds and deploys the logger service and wires up its two
+Cloud Scheduler jobs; it is idempotent and safe to re-run.
 
 ## Data source
 

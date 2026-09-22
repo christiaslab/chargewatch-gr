@@ -40,7 +40,7 @@ instance also serves the gold schema.
 
 ### 5. Raw in GCS, never deleted
 Single source of truth. Every model is recomputable from raw. Volume is ~35 GB/year
-gzipped; a lifecycle rule moves objects to Coldline after 30 days.
+as served (`.json.zip`); a lifecycle rule moves objects to Coldline after 30 days.
 
 ### 6. Only transitions in the lake, not every snapshot
 Raw volume is 3.75 GB/day (26 MB × 144 snapshots). Storing every snapshot as rows
@@ -172,7 +172,8 @@ M1 therefore owns ingestion isolation and ingestion observability:
   capturing. A validator in the write path converts a schema change into permanent data
   loss.
 - **Scheduler retries, with idempotent object names** derived from the fetch timestamp,
-  so a retried run overwrites its own slot rather than producing a duplicate snapshot.
+  so a retried run is a no-op for its slot (create-if-absent) rather than producing a
+  duplicate snapshot.
 - **A ~5 €/month budget alert on gross spend.** Alert only, never a spend cap: GCP's cap
   enforcement *pauses services*, and a paused logger is permanently lost snapshots. Gross
   rather than net, or trial credits mask all spend until they run out.

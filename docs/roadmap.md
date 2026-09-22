@@ -44,8 +44,8 @@ that must never stop is the logger.
 
 M1 is done when the logger **runs unattended** — not when it runs once.
 
-- **Cloud Run Service + Cloud Scheduler**, every 10 minutes. Each run writes one gzip
-  object under `gs://chargewatch-raw-gr/raw/`.
+- **Cloud Run Service + Cloud Scheduler**, every 10 minutes. Each run writes one
+  `.json.zip` object, as served, under `gs://chargewatch-raw-gr/raw/`.
 - **Dead-man's switch.** Cloud Monitoring alert: no new object in the raw prefix for
   ~30 minutes → email. The failure mode of a logger is silence, not an error, so the
   alert fires on *absence*. Verify it once by pausing the Scheduler job and waiting for
@@ -63,9 +63,9 @@ M1 is done when the logger **runs unattended** — not when it runs once.
 
 ## Deliberate placements
 
-**M1 is the logger, not the design.** An imperfect logger writing plain gzip to a bucket
-beats a perfect design that starts next month. The design work (contracts, lake,
-models) all happens *after* the archive has started.
+**M1 is the logger, not the design.** An imperfect logger writing the feed's own
+`.json.zip` bytes to a bucket beats a perfect design that starts next month. The design
+work (contracts, lake, models) all happens *after* the archive has started.
 
 **The scorecard ships right after M1.** The operator data-quality scorecard is
 computable from a single snapshot — no history required. It is regulatory-relevant

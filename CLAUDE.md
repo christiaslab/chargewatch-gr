@@ -18,7 +18,7 @@ the logger must never stop.
 | Layer | Choice |
 |---|---|
 | Runtime | Cloud Run **Service** + Cloud Scheduler, `europe-west1` |
-| Raw storage | GCS `gs://chargewatch-raw-gr`, gzip, immutable |
+| Raw storage | GCS `gs://chargewatch-raw-gr`, `.json.zip` as served, immutable |
 | Lake | DuckLake v1.0 — catalog in Neon Postgres, Parquet in GCS |
 | Query engine | DuckDB over DuckLake |
 | Transform | Polars (diff) + SQLMesh (models) |
