@@ -9,6 +9,8 @@
 #   3. gcloud auth login
 #   4. gcloud components install beta -- needed for `gcloud beta monitoring channels`;
 #      there is no GA command group for notification channels yet.
+#   5. python3 must be on PATH -- used to parse IAM policy JSON where gcloud itself
+#      has no --filter support (see the objectAdmin binding check below).
 #
 # Everything below is idempotent: safe to re-run.
 
@@ -86,14 +88,28 @@ gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
 # only permission the logger needs. Check before removing rather than swallowing the
 # remove's exit code — a swallowed failure here could as easily be a typo or a
 # permission problem as a genuinely absent binding.
-OBJECT_ADMIN_BOUND="$(gcloud storage buckets get-iam-policy "gs://${BUCKET}" \
-  --flatten="bindings[].members" \
-  --filter="bindings.role=roles/storage.objectAdmin AND bindings.members=serviceAccount:${SA}" \
-  --format="value(bindings.role)")"
+# `buckets get-iam-policy` is not a list command (confirmed via --help): its only flags
+# are the GCLOUD WIDE FLAGS (--flatten, --format, ...) — no --filter. Fetch the policy as
+# JSON and match role+member in python3 instead. The get-iam-policy call is its own
+# command substitution, so under set -e its failure (auth, wrong project) aborts the
+# script rather than being read as "absent".
+OBJECT_ADMIN_POLICY="$(gcloud storage buckets get-iam-policy "gs://${BUCKET}" --format=json)"
+OBJECT_ADMIN_BOUND="$(python3 -c '
+import json, sys
+policy = json.loads(sys.argv[1])
+sa = sys.argv[2]
+role = "roles/storage.objectAdmin"
+member = "serviceAccount:" + sa
+for b in policy.get("bindings", []):
+    if b.get("role") == role and member in b.get("members", []):
+        print(role)
+        break
+' "${OBJECT_ADMIN_POLICY}" "${SA}")"
 if [[ -n "${OBJECT_ADMIN_BOUND}" ]]; then
   gcloud storage buckets remove-iam-policy-binding "gs://${BUCKET}" \
     --member="serviceAccount:${SA}" \
-    --role="roles/storage.objectAdmin"
+    --role="roles/storage.objectAdmin" \
+    --all
 else
   echo "    objectAdmin binding already absent, skipping"
 fi
