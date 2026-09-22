@@ -66,3 +66,7 @@ Cloud Scheduler jobs; it is idempotent and safe to re-run.
 Ministry of Infrastructure & Transport, Μ.Υ.Φ.Α.Η. registry —
 [public open data](https://electrokinisi.yme.gov.gr/public/HelpMyfah/PublicData/).
 Wholesale electricity prices from the ENTSO-E Transparency Platform.
+
+## Licence
+
+Apache License 2.0 — see `LICENSE`.
