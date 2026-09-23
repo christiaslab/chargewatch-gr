@@ -29,3 +29,6 @@ lifecycle.json
 LEARNINGS.md
 CLAUDE.local.md
 private/
+
+# Claude Code
+.claude/
