@@ -17,14 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository with full history
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # the commit-history rule reads every commit reachable from HEAD
           fetch-depth: 0
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
+          persist-credentials: false
+      # the runner image ships python3; the verification command is standard library only
       - name: Run the verification command
         run: |
           python3 scripts/verify_kit.py
