@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task_id": "write-path-guard-test",
+  "goal": "Turn the hard rule 'nothing but GCS in the ingestion write path' (CLAUDE.md, spec m1-logger section 4) into a test: the runtime dependencies are exactly the five the spec allows, the dev group is exactly pytest and ruff, pyproject.toml names no lake or warehouse driver, and no module under src/ imports one.",
+  "owned_paths": [
+    "tests/test_write_path_guard.py",
+    "tasks/write-path-guard-test.json"
+  ],
+  "out_of_scope": [
+    "any change under src/, pyproject.toml or the kit files",
+    "any other test file",
+    "any merge; the maintainer merges"
+  ],
+  "done_means": [
+    "uv run --frozen pytest",
+    "uv run --frozen ruff check",
+    "uv run --frozen ruff format --check",
+    "python3 scripts/verify_kit.py",
+    "python3 scripts/push_increment.py"
+  ],
+  "hand_back": "The pull-request URL printed by the push script; the test fails if a forbidden dependency or import enters the logger."
+}
