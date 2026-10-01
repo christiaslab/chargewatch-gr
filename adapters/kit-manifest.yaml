@@ -1,0 +1,108 @@
+# Decision 0012: the portable kit. This file is the only definition of what leaves PAES.
+# Roles: copy = byte-identical, digest-checked in the target; template = placeholders {{project_name}},
+# {{origin_commit}}, {{verification_command}} filled at install time, not digest-checked; optional = exported with
+# the kit and written into a target only when the installer is asked (kit v6: `--ci`), rendered like a template. Parsed by
+# scripts/kit.py (standard library). Version 2 (2026-09-27): settings.json is a template whose allow
+# list names only kit scripts; PAES keeps its own richer settings.json as the rendered instance.
+# Version 3 (2026-09-28): permissions.disableBypassPermissionsMode is the string "disable", the only value
+# the settings schema accepts; the boolean true of versions one and two had the whole file skipped.
+# Version 4 (2026-09-28, Decision 0014): adapters/project-spec.yaml is a template, the one place where a target
+# declares its roles, verification command, hand-off pointer, integration path, guidance files and limits;
+# the kit's AGENTS.md renders from it and kit-project-spec verifies it.
+# Version 5 (2026-09-28, findings 2, 3 and 5 of the third chargewatch-gr trial): the report's count excludes the
+# no-bypass value it names on its own line, the specification template shows how limits are written, and the
+# checklist ends with the prompt a maintainer pastes into the first session to test the kit.
+# Version 6 (2026-09-29, Decision 0017): the push script, split into a provider-neutral core and a review backend named
+# by the specification's `integration` field, joins the kit with its tests and its allow entry; a third skill,
+# publish-increment; every kit skill has one shape, read by the `kit-skills` check; the GitHub CI workflow is an
+# optional template written only behind `--ci`.
+# Version 7 (2026-10-01, Decision 0018): the notice carries the MIT grant, the copyright line and the full MIT text;
+# the scope of the grant is exactly the entries of this manifest at the origin commit, while inside the origin the
+# same files stay AGPL-3.0-only. No entry changes.
+kit_version: 7
+origin: paes
+entries:
+  - role: copy
+    source: adapters/kit-manifest.yaml
+    target: adapters/kit-manifest.yaml
+  - role: template
+    source: adapters/kit-templates/project-spec.yaml.template
+    target: adapters/project-spec.yaml
+  - role: template
+    source: adapters/kit-templates/settings.json.template
+    target: .claude/settings.json
+  - role: copy
+    source: .claude/skills/commit-guard/SKILL.md
+    target: .claude/skills/commit-guard/SKILL.md
+  - role: template
+    source: adapters/kit-templates/verify-kit-SKILL.md.template
+    target: .claude/skills/verify-kit/SKILL.md
+  - role: template
+    source: adapters/kit-templates/publish-increment-SKILL.md.template
+    target: .claude/skills/publish-increment/SKILL.md
+  - role: template
+    source: adapters/kit-templates/AGENTS.md.template
+    target: AGENTS.md
+  - role: copy
+    source: scripts/hooks/session_start.py
+    target: scripts/hooks/session_start.py
+  - role: copy
+    source: scripts/hooks/pre_tool_secrets_guard.py
+    target: scripts/hooks/pre_tool_secrets_guard.py
+  - role: copy
+    source: scripts/commit_guard.py
+    target: scripts/commit_guard.py
+  - role: copy
+    source: scripts/pilot_core.py
+    target: scripts/pilot_core.py
+  - role: copy
+    source: scripts/commit_rules.py
+    target: scripts/commit_rules.py
+  - role: copy
+    source: scripts/test_commit_rules.py
+    target: scripts/test_commit_rules.py
+  - role: copy
+    source: scripts/commit_hygiene.py
+    target: scripts/commit_hygiene.py
+  - role: copy
+    source: scripts/test_commit_hygiene.py
+    target: scripts/test_commit_hygiene.py
+  - role: copy
+    source: scripts/task_contract.py
+    target: scripts/task_contract.py
+  - role: copy
+    source: scripts/test_task_contract.py
+    target: scripts/test_task_contract.py
+  - role: copy
+    source: scripts/kit.py
+    target: scripts/kit.py
+  - role: copy
+    source: scripts/test_kit.py
+    target: scripts/test_kit.py
+  - role: copy
+    source: scripts/verify_kit.py
+    target: scripts/verify_kit.py
+  - role: copy
+    source: scripts/test_verify_kit.py
+    target: scripts/test_verify_kit.py
+  - role: copy
+    source: scripts/push_increment.py
+    target: scripts/push_increment.py
+  - role: copy
+    source: scripts/test_push_increment.py
+    target: scripts/test_push_increment.py
+  - role: optional
+    source: adapters/kit-templates/ci/github-verify.yml.template
+    target: .github/workflows/verify.yml
+  - role: copy
+    source: contracts/task-contract.yaml
+    target: contracts/task-contract.yaml
+  - role: copy
+    source: policies/contribution.md
+    target: policies/contribution.md
+  - role: copy
+    source: policies/worktree-flow.md
+    target: policies/worktree-flow.md
+  - role: copy
+    source: policies/conform-review.md
+    target: policies/conform-review.md

@@ -1,0 +1,32 @@
+# Project specification for chargewatch-gr. Decision 0014: the one place where this project's
+# particularities are declared; every kit text that needs one points here instead of restating it.
+# Written by the kit installer only when absent and never overwritten; this file belongs to
+# chargewatch-gr. Flat YAML only: `key: value` lines and `  - item` lists; comments start with `#`.
+# Roles take a name or handle, or `same as maintainer`; release_authority may also be `none` when the
+# project has no release gate. `python3 scripts/verify_kit.py` fails while `maintainer` is a placeholder.
+# integration is `maintainer pushes`, `push script: github`, `push script: none`, or one line of the project's own
+# words; scripts/push_increment.py runs only under `push script: <backend>` and never merges (Decision 0017).
+spec_version: 1
+project_name: chargewatch-gr
+maintainer: Panagiotis Christias
+reviewer: same as maintainer
+release_authority: same as maintainer
+verification_command: python3 scripts/verify_kit.py
+handoff_pointer: none
+integration: push script: github
+guidance_files:
+  - CLAUDE.md
+  - AGENTS.md
+# One line per rule a session must never cross in this project, in the project's own words; copy them from
+# the project's guidance rather than restating them there. Example (a comment, not a value):
+#   - never write under data/; it is the immutable archive
+limits:
+  - never write secrets to files in the repo; connection strings and keys live in Secret Manager
+  - raw is immutable; never mutate or delete anything under raw/
+  - the NL-to-SQL agent, the semantic layer and the MCP server reach models only through agent_ro on the gold schema
+  - nothing but GCS in the ingestion write path; no Neon, no DuckLake, no validation before the write
+  - no agent in the ingestion path; ingestion and diffing are deterministic
+  - pin exact model versions in models.yaml; never a -latest alias
+  - evals decide the model, not intuition; write the golden set before tuning
+  - do not add Kafka, Kubernetes, a vector DB or fine-tuning (docs/decisions.md #11)
+  - nothing may compromise the continuity of ingestion; keep the logger running over any other concern
