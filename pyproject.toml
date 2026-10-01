@@ -19,6 +19,8 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# PAES kit copies, digest-checked against adapters/KIT_NOTICE.md; they are not reformatted here.
+extend-exclude = ["scripts/*.py", "scripts/hooks/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # ChargeWatch GR
 
 Agentic analytics platform over Greek EV-charging open data. Portfolio project with a

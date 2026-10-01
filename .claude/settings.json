@@ -3,5 +3,61 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(shasum:*)",
+      "Bash(python3 scripts/verify_kit.py:*)",
+      "Bash(python3 scripts/kit.py:*)",
+      "Bash(python3 scripts/commit_guard.py:*)",
+      "Bash(python3 scripts/commit_rules.py:*)",
+      "Bash(python3 scripts/task_contract.py:*)",
+      "Bash(python3 scripts/push_increment.py:*)",
+      "Bash(python3 -m unittest:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(rm -rf:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ],
+    "disableBypassPermissionsMode": "disable"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/session_start.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/pre_tool_secrets_guard.py"
+          }
+        ]
+      }
+    ]
   }
 }

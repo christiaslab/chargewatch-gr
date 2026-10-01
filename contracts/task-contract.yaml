@@ -1,0 +1,64 @@
+contract_type: task_contract
+contract_version: "1.0"
+schema_version: 1
+# A task brief is the input the guarded-change-and-release workflow names as
+# `task-contract`. It bounds one unit of work: what it must achieve, which paths
+# it may write, what it must not touch, which commands prove it is done and how
+# the result is handed back. Briefs are JSON files validated by
+# scripts/task_contract.py; unknown fields are errors, never dropped.
+required_fields:
+  - schema_version
+  - task_id
+  - goal
+  - owned_paths
+  - out_of_scope
+  - done_means
+  - hand_back
+optional_fields:
+  - plan_id
+  - node_id
+  - note
+field_shapes:
+  schema_version: integer, must equal 1
+  task_id: slug ^[a-z0-9]+(?:-[a-z0-9]+)*$, 1 to 64 characters
+  goal: non-empty text, at most 500 characters
+  owned_paths: 1 to 64 relative repository paths, at most 256 characters each, no absolute path, no `..` segment, no duplicates
+  out_of_scope: 0 to 64 non-empty text entries, at most 200 characters each
+  done_means: 1 to 32 non-empty command lines, at most 500 characters each
+  hand_back: non-empty text, at most 500 characters
+  plan_id: slug, same bound as task_id; the plan the task serves
+  node_id: slug, same bound as task_id; the plan node the task serves
+  note: non-empty text, at most 1000 characters
+protected_paths:
+  # A brief may not own these; changing them is a decision or a new record, not a task.
+  - reference/
+  - runs/baseline-2026-08-15-001.yaml
+  - runs/exp-001-in-process-orchestration.json
+  - runs/exp-002-matched-orchestration-confirmation.json
+  - examples/synthetic-dashboard/output/
+  - docs/experiments/
+authority_defaults:
+  commit: false
+  merge: false
+  push: false
+  write_outside_owned_paths: false
+  release_approval: false
+stop_conditions:
+  - a required write falls outside owned_paths
+  - a done_means command fails and the fix is outside owned_paths
+  - the goal needs a decision that no accepted record grants
+example:
+  schema_version: 1
+  task_id: increment-2-task-contract
+  goal: Add the task-contract loader and its tests so the workflow input has a contract file.
+  owned_paths:
+    - contracts/task-contract.yaml
+    - scripts/task_contract.py
+    - scripts/test_task_contract.py
+  out_of_scope:
+    - any file under .claude/ or adapters/
+    - any change to pilot-manifest.yaml
+  done_means:
+    - python3 -m unittest scripts/test_task_contract.py
+    - python3 scripts/verify_repository.py
+  hand_back: A session hand-off under docs/ that quotes the verification result and lists every file written.

@@ -1,0 +1,30 @@
+# Written by the PAES portable kit installer (--ci) for chargewatch-gr; edit freely, this file belongs to chargewatch-gr.
+# One job: the verification command of adapters/project-spec.yaml, on pull requests to main and on pushes to main,
+# with no secrets, no cache and no model; the only network use is the checkout and the Python set-up. Its only artifact is its log.
+name: verify
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository with full history
+        uses: actions/checkout@v4
+        with:
+          # the commit-history rule reads every commit reachable from HEAD
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Run the verification command
+        run: |
+          python3 scripts/verify_kit.py
