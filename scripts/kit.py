@@ -39,7 +39,9 @@ NOTICE = "adapters/KIT_NOTICE.md"
 DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")
+# An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
+UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
 RUFF_CONFIGS = ("pyproject.toml", "ruff.toml", ".ruff.toml")
 # The no-bypass field is restricted by the settings schema to this one string (kit v3, 2026-09-28).
@@ -117,7 +119,7 @@ def load_manifest(root: Path) -> list[Entry]:
     text = (root / MANIFEST).read_text(encoding="utf-8")
     version = _VERSION.search(text)
     if not version or version.group(1) not in KIT_VERSIONS:
-        raise ValueError("kit manifest version is not one of " + ", ".join(KIT_VERSIONS))
+        raise ValueError("kit manifest version is not one of " + ", ".join(KIT_VERSIONS) + "; " + UPGRADE_NOTE)
     entries = [Entry(role, source, target) for role, source, target in _ENTRY.findall(text)]
     if not entries:
         raise ValueError("kit manifest lists no entries")
@@ -359,6 +361,14 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", project_name):
         raise ValueError("project name must be 1 to 64 characters of letters, digits, space, dot, underscore or hyphen")
     entries = load_manifest(source)
+    if report_path is not None:
+        # kit v11, finding 3 of the sixth chargewatch-gr trial: the refusal comes before the first write; a report path
+        # that names a file the install itself writes is refused here too, since it would be overwritten by the report
+        if report_path.exists():
+            raise FileExistsError(f"report exists and is not overwritten: {report_path}")
+        outputs = {(target / entry.target).resolve() for entry in entries} | {(target / name).resolve() for name in ("CLAUDE.md", NOTICE, PROPOSED_SETTINGS)}
+        if report_path.resolve() in outputs:
+            raise ValueError(f"report path names a file the kit writes: {report_path}")
     notice_path = source / NOTICE
     notice = notice_path.read_text(encoding="utf-8") if notice_path.is_file() else notice_text(source, entries, origin_commit(source))
     commit = re.search(r"^origin_commit: (\S+)$", notice, re.MULTILINE).group(1)
@@ -460,6 +470,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         "commit under policies/contribution.md; the kit never commits, the maintainer does",
         f"choose the integration path in {SPEC}: `{PUSH_SCRIPT}: github`, `{PUSH_SCRIPT}: none` or `maintainer pushes`; scripts/push_increment.py runs only under the first two and never merges",
         f"then test the kit in a session opened in this checkout: look for the session banner, then paste: {FIRST_SESSION_PROMPT}",
+        f"to upgrade later, run the kit.py of the newer export (`python3 <export>/scripts/kit.py install ...`): {UPGRADE_NOTE}",
     ]
     report = {
         "result": "PASS",
@@ -472,7 +483,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         "checklist": checklist,
     }
     if report_path is not None:
-        if report_path.exists():
+        if report_path.exists():  # unreachable after the check above; kept so that the report never overwrites anything
             raise FileExistsError(f"report exists and is not overwritten: {report_path}")
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report_markdown(report), encoding="utf-8")

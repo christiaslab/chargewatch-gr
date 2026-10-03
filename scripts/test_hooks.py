@@ -231,6 +231,25 @@ class ReadSideGuardTest(HookFixture):
                 self.assertEqual(result.returncode, 0, value)
                 self.assertEqual(result.stderr, "")
 
+    def test_negated_class_samples_a_character_the_class_does_not_exclude(self) -> None:
+        # kit v11, finding 1 of the sixth chargewatch-gr trial: a fixed x made [!x] sample to the one name the
+        # pattern cannot match, so the placeholder was allowed and the harmless suffix was blocked.
+        example = NAME_ENV + ".example"
+        # Review lane, kit v11: a single letter sample spelled the placeholder, .env.s[!xyz]mple reaching only .env.sample.
+        blocked_values = (NAME_ENV + ".e[!x]ample", NAME_ENV + ".[!a]ocal", "id_[!x]sa", "*.pe[!x]", "*.[!x]em",
+                          NAME_ENV + ".s[!xyz]mple", NAME_ENV + ".e[!0-9_-]ample", NAME_ENV + ".[!x][!y]ample",
+                          NAME_ENV + ".e[!s]ample")
+        allowed_values = ("*.pf[!x]", "*.p[!f]x", example, "src/[!_]*.py", "*.[!p]em", "*.[!e]xample", "config/[!.]*.example")
+        for value in blocked_values:
+            with self.subTest(blocked=value):
+                result = run_hook(SECRETS_GUARD, self.root, self.payload("Glob", pattern=value))
+                self.assert_blocked_without_echo(result, value)
+        for value in allowed_values:
+            with self.subTest(allowed=value):
+                result = run_hook(SECRETS_GUARD, self.root, self.payload("Glob", pattern=value))
+                self.assertEqual(result.returncode, 0, value)
+                self.assertEqual(result.stderr, "")
+
     def test_grep_glob_pattern_and_read_path_share_the_pattern_semantics(self) -> None:
         grep = run_hook(SECRETS_GUARD, self.root, self.payload("Grep", pattern="x", glob="**/id_*"))
         self.assert_blocked_without_echo(grep, "**/id_*")

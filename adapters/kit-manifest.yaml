@@ -39,7 +39,13 @@
 # makes no CI proposal when the target already has the optional entry's file and lists it as skipped. Entry changes:
 # scripts/test_hooks.py joins as a copy, beside the hooks; scripts/test_kit.py and scripts/test_verify_kit.py leave the kit,
 # since they read origin-only templates and cannot run in a target.
-kit_version: 10
+# Version 11 (2026-10-03, findings 1 to 3 of the sixth chargewatch-gr trial): the read-side guard samples a negated class
+# [!...] with a character the class does not exclude, so .env.e[!x]ample is blocked and *.pf[!x] stays readable; the
+# installer refuses an existing report, or a report path that names a file the kit writes, before its first write, so a
+# refused install leaves no new file behind and the report overwrites nothing; the
+# installer keeps its closed version list, and its refusal, the checklist and adapters/README.md say that an upgrade runs
+# the kit.py the newer export ships, never the installed one. No entry changes.
+kit_version: 11
 origin: paes
 entries:
   - role: copy
