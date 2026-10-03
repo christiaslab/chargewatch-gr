@@ -19,7 +19,19 @@
 # Version 7 (2026-10-01, Decision 0018): the notice carries the MIT grant, the copyright line and the full MIT text;
 # the scope of the grant is exactly the entries of this manifest at the origin commit, while inside the origin the
 # same files stay AGPL-3.0-only. No entry changes.
-kit_version: 7
+# Version 8 (2026-10-01, findings 1 and 2 of the fourth chargewatch-gr trial): the installer proposes a ruff exclude for the
+# kit's digest-checked Python copies when the target configures ruff; the width-independent rule hits in kit.py (F401) and
+# commit_rules.py (UP035) are fixed at the source, while those in pilot_core.py (I001, UP035) stay, its bytes being bound by
+# the implementation digests of the pilot run records; the GitHub CI template pins actions/checkout by commit SHA, disables
+# credential persistence and no longer sets up Python, the runner's python3 being enough for a standard-library verifier.
+# No entry changes.
+# Version 9 (2026-10-02, roadmap refinement 2026-10-01 rulings 4 and 9): the secrets guard hook also covers the read side;
+# a Read, Grep or Glob whose file path, search path, glob or pattern names a secret-bearing file by path component (.env
+# and its dotted variants, .envrc, private key files, .netrc and similar credential files, any secrets.* file) is blocked
+# with the rule name only; placeholder copies such as .env.example stay readable; the PreToolUse matcher of the settings
+# template gains Read|Grep|Glob. A target that already carries the old matcher receives no proposal for the new one.
+# No entry changes.
+kit_version: 9
 origin: paes
 entries:
   - role: copy

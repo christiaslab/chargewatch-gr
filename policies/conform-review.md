@@ -6,6 +6,8 @@ Provenance: reimplemented from the documented behaviour of the agent-skills conf
 
 The finding dispositions of section 5, confidence before severity and the bound on candidates were added on 2026-10-01 under Decision 0015; they are reimplemented from the documented behaviour of the retired source's blind-review pattern (`reference/technical-patterns-2026-10/`, section 4.2), which carries no redistribution right; no text was copied.
 
+Section 8, the second lane, was added on 2026-10-02 under Decision 0020.
+
 ## 1. Purpose
 
 A conform review reads a diff against the written rules of this repository and reports where the diff breaks or strains them. It produces findings, never edits. It runs after the deterministic gates, not instead of them: a failed evaluation or verifier check is reported by those tools and is not the subject of a conform review.
@@ -67,8 +69,12 @@ The review checks every hunk for these shapes first, because they recur:
 
 ## 6. Output
 
-The review is a Markdown record with the fields: diff input used, rules files read (path and, where available, commit), findings table (rule id, `path:line`, conflict, disposition, class, in that column order), the one-line summary of candidates beyond the bound when there are any, clean rules, not-applicable rules, reviewer (human or the declared execution profile). When the review is bound as evidence to a plan criterion it follows `contracts/evidence.yaml`; a conform review never produces a `PASS` on its own, since its result is a list of findings that a human weighs.
+The review is a Markdown record with the fields: diff input used, rules files read (path and, where available, commit), findings table (rule id, `path:line`, conflict, disposition, class, in that column order), the one-line summary of candidates beyond the bound when there are any, clean rules, not-applicable rules, reviewer (human or the declared execution profile). When the review is bound as evidence to a plan criterion it follows `contracts/evidence.yaml`; a conform review never produces a `PASS` on its own, since its result is a list of findings that a human weighs. Each finding in that case is a `finding_record` of the contract, validated by `scripts/finding_contract.py`.
 
 ## 7. Relationship to Decision 0008
 
 The adapter wrapper for this policy, when added in the adapter phase under Decision 0008, points here and adds nothing: the wrapper says how to obtain the diff in that environment and where the output goes. No rule of this policy may exist only in the wrapper.
+
+## 8. A second lane (Decision 0020)
+
+A review by the plugin lane that the adapter declaration lists under `plugins:` may run on the same diff at the same time as the conform review; it reads the diff with no rules files and so is not a conform review, and it writes nothing in the tree. Its findings enter as finding records with `method: supplied`, `verified: false`, `disposition: unverified` and a `reporter` naming the lane and the model that ran; the orchestrator re-reads each location and records its own finding with a verifying method before any of them is acted on. The hand-off states the count from each lane, the overlap and the wall time.

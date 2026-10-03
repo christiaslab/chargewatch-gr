@@ -50,7 +50,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit",
+        "matcher": "Bash|Edit|Write|MultiEdit|Read|Grep|Glob",
         "hooks": [
           {
             "type": "command",

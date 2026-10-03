@@ -6,13 +6,16 @@ settings file and writes the merge beside it as settings.proposed.json, marks
 skipped files in the target's notice instead of digesting them (kit v2),
 writes the project specification only when absent and renders the kit's
 AGENTS.md from it (kit v4, Decision 0014), and writes a report it will not
-overwrite. Standard library only.
+overwrite. Kit v8 proposes a ruff exclude for the kit's Python copies when the
+target configures ruff, and its GitHub CI template pins its action by SHA.
+Standard library only.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -280,6 +283,7 @@ class KitExportInstallTest(unittest.TestCase):
         workflow = (self.target / ".github/workflows/verify.yml").read_text(encoding="utf-8")
         self.assertIn("run: |\n          python3 scripts/verify_kit.py\n", workflow)
         self.assertIn("for plain", workflow)
+        self.assertIn("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", workflow)
         self.assertNotIn("{{", workflow)
         self.assertIn(".github/workflows/verify.yml", {item["path"] for item in report["written"]})
         report = kit.install(self.out, self.target, "plain", None, ci=True)
@@ -295,6 +299,44 @@ class KitExportInstallTest(unittest.TestCase):
         self.assertEqual(kit.integration_backend({"integration": "push script: none"}), "none")
         self.assertIsNone(kit.integration_backend({"integration": "push script"}))
         self.assertIsNone(kit.integration_backend(None))
+
+    def test_ruff_exclude_is_proposed_when_the_target_configures_ruff(self) -> None:
+        self.assertIsNone(kit.ruff_exclude_proposal(self.target, []))
+        line = 'extend-exclude = ["scripts/*.py", "scripts/hooks/*.py"]'
+        base = Path(self._tmp.name)
+
+        def ruff_proposals(name: str, files: dict[str, str]) -> list[str]:
+            target = base / name
+            target.mkdir()
+            for file_name, text in files.items():
+                (target / file_name).write_text(text, encoding="utf-8")
+            report = kit.install(REPOSITORY_ROOT, target, name, None)
+            return [item for item in report["proposals"] if "ruff" in item]
+
+        proposals = ruff_proposals("pyproject", {"pyproject.toml": '[project]\nname = "x"\n\n[tool.ruff]\nline-length = 100\n'})
+        self.assertEqual(len(proposals), 1, proposals)
+        self.assertIn(line, proposals[0])
+        self.assertTrue(proposals[0].startswith("pyproject.toml:"), proposals[0])
+        self.assertIn("under [tool.ruff]", proposals[0])
+        excluded = '[tool.ruff]\nline-length = 100\n' + line + "\n"
+        self.assertEqual(ruff_proposals("excluded", {"pyproject.toml": excluded}), [])
+        proposals = ruff_proposals("rufftoml", {"ruff.toml": "line-length = 88\n"})
+        self.assertEqual(len(proposals), 1, proposals)
+        self.assertTrue(proposals[0].startswith("ruff.toml:"), proposals[0])
+        self.assertIn("at the top level", proposals[0])
+        self.assertIn(line, proposals[0])
+        self.assertEqual(ruff_proposals("noruff", {"pyproject.toml": '[project]\nname = "x"\n'}), [])
+
+    def test_ci_template_pins_its_action_by_sha_and_sets_up_no_python(self) -> None:
+        text = (REPOSITORY_ROOT / "adapters/kit-templates/ci/github-verify.yml.template").read_text(encoding="utf-8")
+        pinned = re.compile(r"uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40} # v[0-9][0-9.]*$")
+        uses = [line.strip() for line in text.splitlines() if line.strip().startswith("uses:")]
+        self.assertTrue(uses)
+        for line in uses:
+            self.assertRegex(line, pinned)
+        self.assertNotIn("setup-python", text)
+        self.assertNotIn("python-version", text)
+        self.assertIn("persist-credentials: false", text)
 
     def test_bad_project_name_and_bad_manifest_are_rejected(self) -> None:
         with self.assertRaises(ValueError):
