@@ -28,8 +28,8 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 DEFAULT_VENDOR_TERMS = (
     "anthropic", "claude", "openai", "chatgpt", "codex", "gemini", "copilot", "mistral", "llama",

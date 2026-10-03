@@ -18,6 +18,8 @@ command and hand-off pointer that the kit's AGENTS.md renders. An
 ``optional`` manifest entry (kit v6, Decision 0017 point 7) is exported with
 the kit and written into a target only with ``install --ci``, when the
 specification's ``integration`` names a review backend that has a template.
+Kit v8 proposes a ruff exclude for the kit's Python copies when the target
+configures ruff, and the CI template pins its action by SHA.
 Standard library only.
 """
 from __future__ import annotations
@@ -29,7 +31,6 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 MANIFEST = "adapters/kit-manifest.yaml"
@@ -37,7 +38,9 @@ NOTICE = "adapters/KIT_NOTICE.md"
 DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9")
+# Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
+RUFF_CONFIGS = ("pyproject.toml", "ruff.toml", ".ruff.toml")
 # The no-bypass field is restricted by the settings schema to this one string (kit v3, 2026-09-28).
 # A boolean true, which versions one and two wrote, has the whole settings file rejected and skipped,
 # so the deny list and the hooks are silently inactive while the file still parses as JSON.
@@ -202,6 +205,38 @@ def proposal_summary(items: list[str]) -> str:
     parts = [f"{count} {name}" for name, count in counts.items() if count]
     summary = f"{len(additions)} additions the target lacks" + (": " + ", ".join(parts) if parts else "")
     return summary + ("; and the no-bypass value, named below" if len(additions) != len(items) else "")
+
+
+def ruff_exclude_proposal(target: Path, entries: list[Entry]) -> str | None:
+    """One proposal line when the target configures ruff and does not yet exclude the kit's Python copies (kit v8).
+    The copies are digest-checked, so they cannot be reformatted to the target's width or rule set."""
+    patterns: list[str] = []
+    for entry in entries:
+        if entry.role == "copy" and entry.target.endswith(".py"):
+            parent = entry.target.rsplit("/", 1)[0] if "/" in entry.target else ""
+            pattern = f"{parent}/*.py" if parent else "*.py"
+            if pattern not in patterns:
+                patterns.append(pattern)
+    patterns.sort()  # sorted, not manifest order, so the line is stable when entries move: scripts/*.py first
+    if not patterns:
+        return None
+    for name in RUFF_CONFIGS:
+        path = target / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        if name == "pyproject.toml" and not any(line.startswith("[tool.ruff") for line in text.splitlines()):
+            continue
+        if all(pattern in text for pattern in patterns):
+            return None
+        where = "under [tool.ruff]" if name == "pyproject.toml" else "at the top level"
+        line = "extend-exclude = [" + ", ".join(f'"{pattern}"' for pattern in patterns) + "]"
+        return (f"{name}: configures ruff; the kit's Python copies are digest-checked and are not reformatted to the "
+                f"target's width, so add {where} the line {line}, or lint them separately")
+    return None
 
 
 def notice_text(root: Path, entries: list[Entry], commit: str) -> str:
@@ -399,6 +434,9 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
             proposals.append("--ci: the `none` backend has no review tool and no CI template; the maintainer's own CI, if any, runs the verification command")
         else:
             proposals.append(f"--ci: no CI template exists for the `{backend}` backend; a template joins the kit once a target on that host has tried it (Decision 0017 point 4)")
+    ruff = ruff_exclude_proposal(target, entries)
+    if ruff is not None:
+        proposals.append(ruff)
     claude_md = target / "CLAUDE.md"
     if claude_md.exists():
         if "@AGENTS.md" not in claude_md.read_text(encoding="utf-8", errors="replace"):
