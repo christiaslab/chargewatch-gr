@@ -179,11 +179,11 @@ def test_fetch_failures_are_502_and_never_upload(client, bucket, capsys, handler
 
     assert response.status_code == 502
     body = response.json()
-    assert body["feed"] == "dynamic"
-    assert body["stage"] == "fetch"
-    assert error_fragment in body["error"]
+    assert body == {"feed": "dynamic", "stage": "fetch"}
     assert bucket.uploads == []
-    assert log_lines(capsys) == [{**body, "event": "snapshot_failed"}]
+    [line] = log_lines(capsys)
+    assert line == {**body, "error": line["error"], "event": "snapshot_failed"}
+    assert error_fragment in line["error"]
 
 
 def test_gcs_error_is_500(client, bucket, capsys):
@@ -193,10 +193,10 @@ def test_gcs_error_is_500(client, bucket, capsys):
 
     assert response.status_code == 500
     body = response.json()
-    assert body["feed"] == "dynamic"
-    assert body["stage"] == "store"
-    assert "gcs down" in body["error"]
-    assert log_lines(capsys) == [{**body, "event": "snapshot_failed"}]
+    assert body == {"feed": "dynamic", "stage": "store"}
+    [line] = log_lines(capsys)
+    assert line == {**body, "error": line["error"], "event": "snapshot_failed"}
+    assert "gcs down" in line["error"]
 
 
 @pytest.mark.parametrize("query", ["?feed=other", ""], ids=["unknown-feed", "missing-feed"])
