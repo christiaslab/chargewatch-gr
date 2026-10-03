@@ -54,8 +54,9 @@ def log_event(event: str, payload: dict[str, Any]) -> None:
 
 
 def _failed(feed: str, stage: str, error: str, status: int) -> JSONResponse:
-    body = {"feed": feed, "stage": stage, "error": error}
-    log_event("snapshot_failed", body)
+    """The error detail goes to the log only; the caller gets feed and stage."""
+    body = {"feed": feed, "stage": stage}
+    log_event("snapshot_failed", {**body, "error": error})
     return JSONResponse(body, status_code=status)
 
 
