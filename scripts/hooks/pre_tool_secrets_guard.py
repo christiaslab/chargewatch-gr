@@ -11,7 +11,9 @@ Read side: takes the path a Read, Grep or Glob call would open or search (Read
 file_path; Grep path and glob; Glob pattern and path) and blocks when any path
 component names a secret-bearing file, such as .env and its dotted variants, a
 private key file or a credential file. A search path and a search glob are guarded
-like a read, since a search prints the matching lines of the file it reaches.
+like a read, since a search prints the matching lines of the file it reaches. A
+component that carries a wildcard is evaluated as a pattern against the secret names
+(kit v10), never as the name left after its wildcards are deleted.
 
 A positive finding exits 2 with the rule name on stderr and never the matched value
 or path. Any other outcome, including a malformed payload, a missing field or an
@@ -29,6 +31,7 @@ copied. Roadmap refinement 2026-10-01 rulings 4 and 9; no decision.
 """
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -67,7 +70,33 @@ SECRET_COMPONENTS = {
 # a write-side finding for the value scan and the commit guard, not a read-side one.
 PLACEHOLDER_COMPONENT = re.compile(r".+\.(?:example|sample|template|dist)", re.IGNORECASE)
 
-GLOB_WILDCARDS = re.compile(r"[*?]")
+# A component with a wildcard is a pattern, not a name (kit v10). A pattern is a finding when it can
+# reach a secret name and cannot reach an ordinary one, or when its literal text is itself secret-shaped.
+# The rules are regular expressions with open parts (.env.*, *.pem, secrets.*), so the guard tests a
+# pattern three ways instead of intersecting it with them: (1) fnmatch against the representative secret
+# names below (id_* reaches id_rsa, *.p?m reaches server.pem); (2) unless it also reaches one of the
+# ordinary project files below, in which case that hit is a generic search (*.json reaches app.json) and
+# is discarded; and (3) a few literal instances of the pattern (each * as nothing, as x or as .x; each ?
+# and [...] as one character) checked against the rules, which blocks on its own (.env.example* reaches
+# .env.example.x, secrets.* reaches secrets.). Placeholder names are exempt throughout, so *.example
+# stays readable. A component of wildcards alone (*, **) names nothing and is not a finding.
+REPRESENTATIVE_SECRET_NAMES = (
+    ".env", ".env.local", ".env.development", ".env.production", ".env.staging", ".env.test", ".envrc",
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "id_ecdsa_sk", "id_ed25519_sk",
+    "server.pem", "server.key", "cert.p12", "cert.pfx",
+    ".netrc", "_netrc", ".npmrc", ".pypirc", ".git-credentials", ".htpasswd", "credentials", "credentials.json",
+    "secrets.json", "secrets.yaml", "secrets.yml", "secrets.toml", "secrets.env",
+)
+# Ordinary project files for gate (2); none may be a secret name or start with secrets. or credentials.
+ORDINARY_PROJECT_NAMES = (
+    "app.json", "package.json", "config.yaml", "settings.yml", "pyproject.toml", "main.py", "README.md",
+    "index.ts", "data.csv", "notes.txt",
+    # Hidden and rc files, so that .*, .??* and *rc stay the generic searches they are (second review lane, kit v10).
+    ".gitignore", ".gitattributes", ".editorconfig", ".eslintrc", ".prettierrc",
+)
+GLOB_WILDCARDS = re.compile(r"[*?[]")
+GLOB_PART = re.compile(r"\*+|\?|\[!?\]?[^\]]*\]")
+STAR_FILLERS = ("", "x", ".x")
 COMPONENT_SEPARATORS = re.compile(r"[/\\]")
 BRACE_GROUP = re.compile(r"\{([^{}]*)\}")
 MAX_EXPANSIONS = 64
@@ -108,13 +137,34 @@ def expand_braces(value: str) -> list[str]:
     return done + pending
 
 
-def is_secret_component(component: str) -> bool:
-    # Drop the wildcards so that *.pem reads as .pem and id_rsa* as id_rsa: a glob that can
-    # reach a secret-bearing name is guarded like the name itself.
-    name = GLOB_WILDCARDS.sub("", component).strip()
+def is_secret_name(name: str) -> bool:
     if not name or PLACEHOLDER_COMPONENT.fullmatch(name):
         return False
     return any(pattern.fullmatch(name.lower()) for pattern in SECRET_COMPONENTS.values())
+
+
+def one_character(part: str) -> str:
+    """One character a ? or a [...] class matches: the first member of a class such as [eE], else x."""
+    return "x" if part == "?" or part.startswith("[!") else part[1]
+
+
+def glob_instances(pattern: str) -> list[str]:
+    """Literal names the pattern matches: every * filled alike from STAR_FILLERS, each ? and [...] as one character."""
+    return [GLOB_PART.sub(lambda match, filler=filler: filler if match.group().startswith("*") else one_character(match.group()), pattern)
+            for filler in STAR_FILLERS]
+
+
+def is_secret_component(component: str) -> bool:
+    component = component.strip()
+    if not GLOB_WILDCARDS.search(component):
+        return is_secret_name(component)
+    if not GLOB_PART.sub("", component):
+        return False  # wildcards alone, such as * or **: names nothing
+    pattern = component.lower()
+    if any(is_secret_name(name) for name in glob_instances(pattern)):
+        return True  # gate (3): the pattern's own literal text is secret-shaped
+    reaches_secret = any(fnmatch.fnmatchcase(name, pattern) for name in REPRESENTATIVE_SECRET_NAMES if is_secret_name(name))
+    return reaches_secret and not any(fnmatch.fnmatchcase(name.lower(), pattern) for name in ORDINARY_PROJECT_NAMES)
 
 
 def names_secret_path(value: str) -> bool:

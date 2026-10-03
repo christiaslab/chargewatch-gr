@@ -31,7 +31,15 @@
 # with the rule name only; placeholder copies such as .env.example stay readable; the PreToolUse matcher of the settings
 # template gains Read|Grep|Glob. A target that already carries the old matcher receives no proposal for the new one.
 # No entry changes.
-kit_version: 9
+# Version 10 (2026-10-03, findings 1, 3 and 4 of the fifth chargewatch-gr trial): the read-side guard evaluates a path
+# component that carries a wildcard as a pattern instead of deleting its wildcards: a finding when it can reach a secret name
+# and cannot reach an ordinary project file, or when its literal text is itself secret-shaped; id_*, *.p?m, .env.example*
+# and credentials.* are blocked, while generic searches such as *.json and placeholders such as .env.example and *.example
+# stay readable; the installer
+# makes no CI proposal when the target already has the optional entry's file and lists it as skipped. Entry changes:
+# scripts/test_hooks.py joins as a copy, beside the hooks; scripts/test_kit.py and scripts/test_verify_kit.py leave the kit,
+# since they read origin-only templates and cannot run in a target.
+kit_version: 10
 origin: paes
 entries:
   - role: copy
@@ -62,6 +70,9 @@ entries:
     source: scripts/hooks/pre_tool_secrets_guard.py
     target: scripts/hooks/pre_tool_secrets_guard.py
   - role: copy
+    source: scripts/test_hooks.py
+    target: scripts/test_hooks.py
+  - role: copy
     source: scripts/commit_guard.py
     target: scripts/commit_guard.py
   - role: copy
@@ -89,14 +100,8 @@ entries:
     source: scripts/kit.py
     target: scripts/kit.py
   - role: copy
-    source: scripts/test_kit.py
-    target: scripts/test_kit.py
-  - role: copy
     source: scripts/verify_kit.py
     target: scripts/verify_kit.py
-  - role: copy
-    source: scripts/test_verify_kit.py
-    target: scripts/test_verify_kit.py
   - role: copy
     source: scripts/push_increment.py
     target: scripts/push_increment.py
