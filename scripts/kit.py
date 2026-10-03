@@ -19,7 +19,8 @@ command and hand-off pointer that the kit's AGENTS.md renders. An
 the kit and written into a target only with ``install --ci``, when the
 specification's ``integration`` names a review backend that has a template.
 Kit v8 proposes a ruff exclude for the kit's Python copies when the target
-configures ruff, and the CI template pins its action by SHA.
+configures ruff, and the CI template pins its action by SHA. Kit v10 makes no
+CI proposal when the target already has the workflow and lists it as skipped.
 Standard library only.
 """
 from __future__ import annotations
@@ -38,7 +39,7 @@ NOTICE = "adapters/KIT_NOTICE.md"
 DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
 RUFF_CONFIGS = ("pyproject.toml", "ruff.toml", ".ruff.toml")
 # The no-bypass field is restricted by the settings schema to this one string (kit v3, 2026-09-28).
@@ -387,7 +388,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         if entry.role == "optional":
             if entry.source != ci_template:
                 continue  # another backend's template, or one the target's integration path does not name
-            if not ci:
+            if not ci and not destination.exists():  # kit v10: no proposal when the target already has the workflow
                 proposals.append(f"{entry.target}: a CI workflow for the `{backend}` backend can be written from the kit; rerun the installer with --ci to write it")
                 continue
         if destination.exists():
