@@ -32,6 +32,7 @@ copied. Roadmap refinement 2026-10-01 rulings 4 and 9; no decision.
 from __future__ import annotations
 
 import fnmatch
+import itertools
 import json
 import os
 import re
@@ -97,6 +98,10 @@ ORDINARY_PROJECT_NAMES = (
 GLOB_WILDCARDS = re.compile(r"[*?[]")
 GLOB_PART = re.compile(r"\*+|\?|\[!?\]?[^\]]*\]")
 STAR_FILLERS = ("", "x", ".x")
+# Samples for a negated class (kit v11): one character from each group that the class does not exclude, a digit-like one
+# first so that a sample cannot spell a placeholder suffix, then a letter from either end of the alphabet; the instances
+# are built from every combination.
+CLASS_SAMPLES = ("0123456789_-", "xyzabcdefghijklmnopqrstuvw", "wvutsrqponmlkjihgfedcbazyx")
 COMPONENT_SEPARATORS = re.compile(r"[/\\]")
 BRACE_GROUP = re.compile(r"\{([^{}]*)\}")
 MAX_EXPANSIONS = 64
@@ -143,15 +148,28 @@ def is_secret_name(name: str) -> bool:
     return any(pattern.fullmatch(name.lower()) for pattern in SECRET_COMPONENTS.values())
 
 
-def one_character(part: str) -> str:
-    """One character a ? or a [...] class matches: the first member of a class such as [eE], else x."""
-    return "x" if part == "?" or part.startswith("[!") else part[1]
+def class_characters(part: str) -> tuple[str, ...]:
+    """Characters a ? or a [...] class is sampled with: x for ?, the first member of a class such as [eE], and for a
+    negated class such as [!x] one character per CLASS_SAMPLES group that the class does not exclude (kit v11, finding 1
+    of the sixth chargewatch-gr trial: a fixed x made [!x] sample to the one name the pattern cannot match, and a single
+    letter sample could spell a placeholder suffix, .env.s[!xyz]mple reaching only .env.sample)."""
+    if part == "?":
+        return ("x",)
+    if not part.startswith("[!"):
+        return (part[1],)
+    found = [next((sample for sample in group if fnmatch.fnmatchcase(sample, part)), None) for group in CLASS_SAMPLES]
+    return tuple(sample for sample in found if sample) or ("x",)
 
 
 def glob_instances(pattern: str) -> list[str]:
-    """Literal names the pattern matches: every * filled alike from STAR_FILLERS, each ? and [...] as one character."""
-    return [GLOB_PART.sub(lambda match, filler=filler: filler if match.group().startswith("*") else one_character(match.group()), pattern)
-            for filler in STAR_FILLERS]
+    """Literal names the pattern matches: every * filled alike from STAR_FILLERS, each ? and [...] as one character,
+    a negated class in every sampled combination, at most MAX_EXPANSIONS names."""
+    pieces = re.split(f"({GLOB_PART.pattern})", pattern)
+    choices = [(piece,) if index % 2 == 0 else (None,) if piece.startswith("*") else class_characters(piece)
+               for index, piece in enumerate(pieces)]
+    names = ("".join(filler if piece is None else piece for piece in combination)
+             for combination in itertools.product(*choices) for filler in STAR_FILLERS)  # fillers innermost: the cap keeps all three
+    return list(itertools.islice(names, MAX_EXPANSIONS))
 
 
 def is_secret_component(component: str) -> bool:
