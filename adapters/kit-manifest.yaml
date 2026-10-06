@@ -45,7 +45,14 @@
 # refused install leaves no new file behind and the report overwrites nothing; the
 # installer keeps its closed version list, and its refusal, the checklist and adapters/README.md say that an upgrade runs
 # the kit.py the newer export ships, never the installed one. No entry changes.
-kit_version: 11
+# Version 12 (2026-10-06, the upgrade in place, open since the fifth chargewatch-gr trial and record 4 of the seventh
+# trial's field confirmation): `install --upgrade` over an
+# installed kit overwrites a copy only when the target file still carries the digest the installed KIT_NOTICE.md recorded
+# for it, reports a copy already at the export's digest as unchanged, writes a missing one and refuses a modified one, or
+# one that is a symbolic link, a directory or a path that resolves outside the target, by name with a proposal; templates, the settings file and AGENTS.md keep install behaviour; the notice is rewritten with the
+# export's digests, the target's own files staying `skipped`; a target without a notice is refused before any write. The
+# bump also folds in the digest drift of scripts/test_hooks.py under version eleven. No entry changes.
+kit_version: 12
 origin: paes
 entries:
   - role: copy

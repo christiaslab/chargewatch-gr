@@ -1,8 +1,8 @@
 # PAES kit notice
 
 origin: paes
-origin_commit: 406fa1acea077c46ca646bfe393fa27a65cc2a9b
-exported: 2026-10-03
+origin_commit: 6d72ca87020e979d80d644759ccb0c2140651ee9
+exported: 2026-10-06
 licence: MIT (the exported kit, Decision 0018; full text in the section below)
 copyright: Copyright (c) 2026 Panagiotis Christias
 
@@ -12,7 +12,7 @@ Files below marked with a digest are byte-identical copies of the origin; templa
 
 ## Digests
 
-06fc2130c2ed59a4e2c0ddada432ce362e31e8e16c94a0f7319faae37a624c44  adapters/kit-manifest.yaml
+3767e506fe0c6d511d0206054188a610dcf20761bb7fdb2fe281103638989c22  adapters/kit-manifest.yaml
 template  adapters/project-spec.yaml
 template  .claude/settings.json
 3bf6f5e8f81c810f6d0bce337ee3772db707fdeaf1d5c09e245a74017c64d1db  .claude/skills/commit-guard/SKILL.md
@@ -21,7 +21,7 @@ template  .claude/skills/publish-increment/SKILL.md
 template  AGENTS.md
 6b606150f8cca139f7df50a391261780fb6c86ece5d0f70863457211ba1f5ce1  scripts/hooks/session_start.py
 ff01e4eb1927897ec3427e37e3be89dd11eb4a8792031f639ea36309cefc0d0c  scripts/hooks/pre_tool_secrets_guard.py
-a941030c491673ee5e87b7736e4e615f4f495dc79a1d8607d6f4f26465306801  scripts/test_hooks.py
+287615111a1cc67067caa57ab1f223ed3b69e9942e91274ba263988c4752d57c  scripts/test_hooks.py
 31a907772711bbc69804c838905b41ae99d27a3f0bb85f0cb4623db9debf497f  scripts/commit_guard.py
 2af9569858100552e4eacd7398f4760a00f80247824fe90b963cb3533c772c36  scripts/pilot_core.py
 71a0f85e373f5e8123638f66b09aa89c7932470f859d172d2b79c57df70bea9a  scripts/commit_rules.py
@@ -30,7 +30,7 @@ ec856309891382a227815f9fe2bfa726aa690bcff535e87f4a855858708902ef  scripts/test_c
 57fa8a1068562f29b93c60dfca40ec6a59d8396da5f60e6f46a5d81e87d55077  scripts/test_commit_hygiene.py
 d81f4adcd88eda8e20caa06cfa3419d8053b8e76a6d54df0b3ae40cdb8d48a1e  scripts/task_contract.py
 ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_task_contract.py
-62dbe7c9512a927fb8df8fc1d110479998308380443c2617340e5d0d66c56b52  scripts/kit.py
+99b22598cf449b5e8e9af030f51f2fd1070d4c70fb352f8056d9f25276782c9b  scripts/kit.py
 20b627e77b19a7e7cc4abf0622deea8333f775bc2998fe2086eb6e1f712724c7  scripts/verify_kit.py
 637becd2771c5164ff7e47a903c79052e1bb944acd95a6b42e2a502db8daab25  scripts/push_increment.py
 c587efe016effcd9eba40ac38cb0e072602ce7bad5a3e67ee8c985ab16ad0e4e  scripts/test_push_increment.py

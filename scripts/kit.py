@@ -21,7 +21,10 @@ specification's ``integration`` names a review backend that has a template.
 Kit v8 proposes a ruff exclude for the kit's Python copies when the target
 configures ruff, and the CI template pins its action by SHA. Kit v10 makes no
 CI proposal when the target already has the workflow and lists it as skipped.
-Standard library only.
+Kit v12: ``install --upgrade`` over an installed kit overwrites a copy only when
+it still carries the digest the installed notice recorded for it, refuses a
+modified copy or a path through a symbolic link by name and rewrites the
+notice with the export's digests. Standard library only.
 """
 from __future__ import annotations
 
@@ -39,7 +42,7 @@ NOTICE = "adapters/KIT_NOTICE.md"
 DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
 # An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
 UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
@@ -357,10 +360,31 @@ def merge_settings(kit_settings: dict, target_settings: dict) -> dict:
     return merged
 
 
-def install(source: Path, target: Path, project_name: str, report_path: Path | None, ci: bool = False) -> dict[str, object]:
+def inside_target(destination: Path, target: Path) -> bool:
+    """kit v12: a destination the upgrade may overwrite is no link, resolves inside the resolved target and, when it
+    exists, is a regular file (review lane, fourth finding: a copy replaced by a directory would abort the run)."""
+    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+        return False
+    try:
+        return destination.resolve().is_relative_to(target.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def install(source: Path, target: Path, project_name: str, report_path: Path | None, ci: bool = False,
+            upgrade: bool = False) -> dict[str, object]:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", project_name):
         raise ValueError("project name must be 1 to 64 characters of letters, digits, space, dot, underscore or hyphen")
     entries = load_manifest(source)
+    installed: dict[str, str] = {}
+    if upgrade:
+        # kit v12: the installed notice's digest is the only evidence that a copy is still the kit's; refused before any write
+        if not (target / NOTICE).is_file():
+            raise FileNotFoundError("no installed kit notice in the target; run install without --upgrade")
+        if not inside_target(target / NOTICE, target):
+            # kit v12, review lane: the notice is rewritten on upgrade, so a link there would rewrite another install's
+            raise FileNotFoundError(f"{NOTICE} is a symbolic link or resolves outside the target; not followed")
+        installed = parse_notice((target / NOTICE).read_text(encoding="utf-8"))
     if report_path is not None:
         # kit v11, finding 3 of the sixth chargewatch-gr trial: the refusal comes before the first write; a report path
         # that names a file the install itself writes is refused here too, since it would be overwritten by the report
@@ -391,6 +415,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         proposals.append(f"{SPEC}: exists but could not be parsed as the flat YAML the kit reads; the defaults were rendered instead")
     written: list[tuple[str, str]] = []
     skipped: list[tuple[str, str]] = []
+    own: set[str] = set()  # kit v12: copies the target already had, marked `skipped` in the notice
     backend = integration_backend(spec)
     ci_template = CI_TEMPLATES.get(backend) if backend else None
     for entry in entries:
@@ -401,8 +426,31 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
             if not ci and not destination.exists():  # kit v10: no proposal when the target already has the workflow
                 proposals.append(f"{entry.target}: a CI workflow for the `{backend}` backend can be written from the kit; rerun the installer with --ci to write it")
                 continue
-        if destination.exists():
+        if upgrade and entry.role == "copy" and not inside_target(destination, target):
+            # kit v12, review lane: a copy replaced by a symbolic link, or under a linked directory that leaves the target,
+            # is never followed, so an upgrade of one target cannot write into another; refused by name, dangling or not
+            skipped.append((entry.target, "a symbolic link, a directory or outside the target; not overwritten"))
+            if entry.target not in installed:
+                own.add(entry.target)  # review lane, third finding: a target-owned link keeps its `skipped` line in the notice
+            proposals.append(f"{entry.target}: a symbolic link, a directory or a path that resolves outside the target, not followed and not "
+                             f"overwritten; replace it with {entry.source} from the export by hand if the kit's copy is wanted there")
+            continue
+        if upgrade and entry.role == "copy" and destination.exists() and entry.target in installed:
+            # kit v12: overwrite only a copy still at the installed digest; a modified copy is refused by name
+            current = sha256_file(destination)
+            if current == sha256_file(source / entry.source):
+                skipped.append((entry.target, "unchanged, already at the export's digest"))
+                continue
+            if current != installed[entry.target]:
+                skipped.append((entry.target, "modified in the target; not overwritten"))
+                proposals.append(f"{entry.target}: modified in the target since the kit installed it and not overwritten; compare it "
+                                 f"with {entry.source} in the export by hand; the notice now records the export's digest, so "
+                                 f"{VERIFICATION_COMMAND} reports it as differing until it is reconciled")
+                continue
+        elif destination.exists():
             skipped.append((entry.target, "exists in the target; not overwritten"))
+            if entry.role == "copy":
+                own.add(entry.target)
             if entry.target == SETTINGS:
                 try:
                     kit_settings = json.loads(render((source / entry.source).read_text(encoding="utf-8"), fields))
@@ -456,11 +504,13 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         claude_md.write_text("@AGENTS.md\n", encoding="utf-8")
         written.append(("CLAUDE.md", sha256_file(claude_md)))
     target_notice = target / NOTICE
-    if target_notice.exists():
+    if target_notice.exists() and not upgrade:
         skipped.append((NOTICE, "exists in the target; not overwritten"))
     else:
+        # kit v12: on upgrade only the target's own copies stay `skipped`; a refused modified copy gets the export's digest
         target_notice.parent.mkdir(parents=True, exist_ok=True)
-        target_notice.write_text(installed_notice(notice, {path for path, _ in skipped}), encoding="utf-8")
+        marked = own if upgrade else {path for path, _ in skipped}
+        target_notice.write_text(installed_notice(notice, marked), encoding="utf-8")
         written.append((NOTICE, sha256_file(target_notice)))
     checklist = [
         f"review the merge proposals above, if any; a written {PROPOSED_SETTINGS} is the settings merge ready to adopt or discard",
@@ -481,6 +531,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         "skipped": [{"path": path, "reason": reason} for path, reason in skipped],
         "proposals": proposals,
         "checklist": checklist,
+        "upgrade": upgrade,
     }
     if report_path is not None:
         if report_path.exists():  # unreachable after the check above; kept so that the report never overwrites anything
@@ -492,10 +543,13 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
 
 
 def report_markdown(report: dict[str, object]) -> str:
+    # kit v12: an upgrade overwrites the copies still at the installed digest, and the report says so
+    done = ("Kit copies still at the installed notice's digest and the notice were overwritten; nothing was deleted."
+            if report.get("upgrade") else "Nothing was overwritten or deleted.")
     lines = [
         f"# Kit install report for {report['project_name']}",
         "",
-        f"Origin commit: `{report['origin_commit']}`. Target: `{report['target']}`. Nothing was overwritten or deleted.",
+        f"Origin commit: `{report['origin_commit']}`. Target: `{report['target']}`. {done}",
         "",
         "## Written",
         "",
@@ -518,13 +572,16 @@ def main(argv: list[str] | None = None) -> int:
     exp = sub.add_parser("export", help="copy the kit to a directory with a notice and digests")
     exp.add_argument("--root", type=Path, default=Path.cwd())
     exp.add_argument("--out", type=Path, required=True)
-    ins = sub.add_parser("install", help="write the kit into a target, only where files are missing")
+    ins = sub.add_parser("install", help="write the kit into a target, only where files are missing; with --upgrade, "
+                         "also replace kit copies still at the installed notice's digest")
     ins.add_argument("--from", dest="source", type=Path, default=Path.cwd(), help="an export directory or the PAES root")
     ins.add_argument("--target", type=Path, required=True)
     ins.add_argument("--project-name", required=True)
     ins.add_argument("--report", type=Path, help=f"report file; default <target>/{DEFAULT_REPORT}; never overwritten")
     ins.add_argument("--no-report", action="store_true")
     ins.add_argument("--ci", action="store_true", help="also write the CI workflow template of the specification's review backend, when one exists")
+    ins.add_argument("--upgrade", action="store_true", help="over an installed kit: overwrite a copy only when it still carries the "
+                     "installed notice's digest, refuse a modified one by name, rewrite the notice (kit v12)")
     args = parser.parse_args(argv)
     try:
         if args.command == "export":
@@ -532,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             target = args.target.resolve()
             report_path = None if args.no_report else (args.report.resolve() if args.report else target / DEFAULT_REPORT)
-            result = install(args.source.resolve(), target, args.project_name, report_path, ci=args.ci)
+            result = install(args.source.resolve(), target, args.project_name, report_path, ci=args.ci, upgrade=args.upgrade)
     except (ValueError, FileNotFoundError, FileExistsError, OSError) as error:
         print(json.dumps({"result": "FAIL", "error": str(error)}, indent=2))
         return 1
