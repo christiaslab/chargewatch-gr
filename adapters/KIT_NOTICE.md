@@ -26,7 +26,7 @@ ff01e4eb1927897ec3427e37e3be89dd11eb4a8792031f639ea36309cefc0d0c  scripts/hooks/
 2af9569858100552e4eacd7398f4760a00f80247824fe90b963cb3533c772c36  scripts/pilot_core.py
 71a0f85e373f5e8123638f66b09aa89c7932470f859d172d2b79c57df70bea9a  scripts/commit_rules.py
 ec856309891382a227815f9fe2bfa726aa690bcff535e87f4a855858708902ef  scripts/test_commit_rules.py
-322360f4e71b570375c86efa652cd63e681d3320c60a287af99ceb05a0fda255  scripts/commit_hygiene.py
+skipped  scripts/commit_hygiene.py  (the target's own file since 2026-10-07: Dependabot sign-off exemption, docs/decisions.md #16)
 57fa8a1068562f29b93c60dfca40ec6a59d8396da5f60e6f46a5d81e87d55077  scripts/test_commit_hygiene.py
 d81f4adcd88eda8e20caa06cfa3419d8053b8e76a6d54df0b3ae40cdb8d48a1e  scripts/task_contract.py
 ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_task_contract.py
@@ -36,7 +36,7 @@ ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_t
 c587efe016effcd9eba40ac38cb0e072602ce7bad5a3e67ee8c985ab16ad0e4e  scripts/test_push_increment.py
 optional  .github/workflows/verify.yml  (written only when the installer is asked)
 a14e95714586d6bcd94860aa718b51155c3fd9042996eb64c6344e17b34fd0de  contracts/task-contract.yaml
-283665c3c4a91ff4701e7f5155cc7b50c86303139cee6efdf176a911d2271df3  policies/contribution.md
+skipped  policies/contribution.md  (the target's own file since 2026-10-07: Dependabot sign-off exemption, docs/decisions.md #16)
 1d6e20ff914b4c09d61680a56cbbae002297ba5c4259eba99c5ebc8d3adc9a5c  policies/worktree-flow.md
 34686667a0e66d5192ec089cc6709231096f31bce7e009377863758e42fd6395  policies/conform-review.md
 

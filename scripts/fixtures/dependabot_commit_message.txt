@@ -1,0 +1,49 @@
+chore(deps): bump the all-dependencies group with 4 updates
+
+Bumps the all-dependencies group with 4 updates: [fastapi](https://github.com/fastapi/fastapi), [google-cloud-storage](https://github.com/googleapis/google-cloud-python), [uvicorn](https://github.com/Kludex/uvicorn) and [ruff](https://github.com/astral-sh/ruff).
+
+
+Updates `fastapi` from 0.141.1 to 0.142.1
+- [Release notes](https://github.com/fastapi/fastapi/releases)
+- [Commits](https://github.com/fastapi/fastapi/compare/0.141.1...0.142.1)
+
+Updates `google-cloud-storage` from 3.14.1 to 3.15.1
+- [Release notes](https://github.com/googleapis/google-cloud-python/releases)
+- [Changelog](https://github.com/googleapis/google-cloud-python/blob/main/packages/google-cloud-documentai/CHANGELOG.md)
+- [Commits](https://github.com/googleapis/google-cloud-python/compare/google-cloud-storage-v3.14.1...google-cloud-storage-v3.15.1)
+
+Updates `uvicorn` from 0.53.0 to 0.54.0
+- [Release notes](https://github.com/Kludex/uvicorn/releases)
+- [Changelog](https://github.com/Kludex/uvicorn/blob/main/docs/release-notes.md)
+- [Commits](https://github.com/Kludex/uvicorn/compare/0.53.0...0.54.0)
+
+Updates `ruff` from 0.16.8 to 0.16.9
+- [Release notes](https://github.com/astral-sh/ruff/releases)
+- [Changelog](https://github.com/astral-sh/ruff/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/astral-sh/ruff/compare/0.16.8...0.16.9)
+
+---
+updated-dependencies:
+- dependency-name: fastapi
+  dependency-version: 0.142.1
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+  dependency-group: all-dependencies
+- dependency-name: google-cloud-storage
+  dependency-version: 3.15.1
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+  dependency-group: all-dependencies
+- dependency-name: uvicorn
+  dependency-version: 0.54.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+  dependency-group: all-dependencies
+- dependency-name: ruff
+  dependency-version: 0.16.9
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: all-dependencies
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>

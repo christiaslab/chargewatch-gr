@@ -6,6 +6,8 @@ Status: added 2026-09-19 under Decision 0006; the commit-history rule is enforce
 
 Commit messages and pull-request descriptions carry no attribution: no `Co-Authored-By` or `Signed-off-by` trailer, no assistant credit, and no generated-with or generated-by signature. Technical provenance (source commits, digests, verification results) belongs in the body.
 
+One exemption (chargewatch-gr, `docs/decisions.md` #16): a commit authored by Dependabot may carry Dependabot's own `Signed-off-by: dependabot[bot] <support@github.com>` line, which GitHub adds to every Dependabot commit and which cannot be switched off. Any other attribution line in a Dependabot commit still fails, and the exemption never covers a human author.
+
 Enforcement: the `commit-message-hygiene` check in `scripts/verify_repository.py` runs `scripts/commit_hygiene.py` over every commit reachable from `HEAD` and fails on any such line. Findings name the commit and the rule, never the rejected text. The project tooling default that keeps trailers out of new commits is separate, in `.claude/settings.json`, and is not read by the check.
 
 ## Staged content

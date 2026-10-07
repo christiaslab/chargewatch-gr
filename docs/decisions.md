@@ -186,3 +186,20 @@ history. Nothing in M7 watches the logger.
 
 *Reverses if:* nothing. This is the direct application of the project's first rule — when
 in doubt, favour keeping the logger running.
+
+### 16. Dependabot's sign-off is exempt from the commit-history rule
+The kit's commit-history rule rejects every `Signed-off-by` line. GitHub adds
+`Signed-off-by: dependabot[bot] <support@github.com>` to every Dependabot commit, and
+`dependabot.yml` has no setting to drop it, so every dependency PR failed `verify`
+(first seen on PR 13). Rewriting each bot commit by hand is the kind of chore that ends with
+security updates left unmerged, which is worse for the logger than a trailer.
+
+The exemption is narrow: that exact line, in a commit whose author email is Dependabot's
+noreply address. Any other trailer or signature in a Dependabot commit still fails, and
+human commits are unaffected. Author email is not authenticated, which is acceptable
+because the rule is history hygiene, not access control. `scripts/commit_hygiene.py` and
+`policies/contribution.md` are therefore target-owned (`skipped` in
+`adapters/KIT_NOTICE.md`), and a kit upgrade leaves them alone.
+
+*Reverses if:* Dependabot allows the sign-off to be disabled, or the kit gains its own
+bot exemption — then return both files to the kit's copies.
