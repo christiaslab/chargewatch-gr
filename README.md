@@ -54,6 +54,7 @@ Cloud Scheduler ──(every 10 min)──→ Cloud Run Service
 | `docs/decisions.md` | Every locked technical choice with its reason |
 | `docs/data-notes.md` | Measured findings from both feeds |
 | `docs/roadmap.md` | Milestones, the M1 definition of done, and the business thesis |
+| `CONTRIBUTING.md` | Setup, checks, and how changes reach `main` |
 
 ## Setup
 

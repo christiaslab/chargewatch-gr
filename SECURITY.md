@@ -12,7 +12,7 @@ vulnerability"**. Do not open a public issue for security reports.
 
 ## Response
 
-This is a solo-maintained project. Reports are handled on a best-effort basis, with
+This project has two maintainers. Reports are handled on a best-effort basis, with
 acknowledgement within 7 days.
 
 ## Scope
