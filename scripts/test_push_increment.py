@@ -129,6 +129,24 @@ class PushIncrementTest(unittest.TestCase):
         self.assertIn("--head feat/thing --state open", lookup[0])
         self.assertEqual(git(self.work, "status", "--porcelain"), "", "a run must leave the tree clean, bytecode included")
 
+    def test_draft_reaches_the_cli_and_the_report(self) -> None:
+        # kit v18: --draft is passed through to the CLI so a host with CODEOWNERS requests no reviewer yet
+        report = self.run_script("--draft")
+        self.assertEqual(report["result"], "PASS", report)
+        self.assertTrue(report["draft"])
+        create = [call for call in self.gh_calls() if call.startswith("pr create")]
+        self.assertEqual(len(create), 1)
+        # the fake logs `$*`, so the multi-line body spreads the call over lines; the flag is the last token
+        self.assertTrue(self.log.read_text(encoding="utf-8").rstrip().endswith(" --draft"))
+
+    def test_draft_is_absent_by_default(self) -> None:
+        report = self.run_script()
+        self.assertEqual(report["result"], "PASS", report)
+        self.assertFalse(report["draft"])
+        create = [call for call in self.gh_calls() if call.startswith("pr create")]
+        self.assertEqual(len(create), 1)
+        self.assertNotIn("--draft", self.log.read_text(encoding="utf-8"))
+
     def test_a_merged_pull_request_with_the_same_branch_name_is_not_reused(self) -> None:
         # The fake lists the merged pull/0 for any lookup that does not restrict itself to open reviews.
         (self.log.parent / "gh.log.merged").write_text("", encoding="utf-8")

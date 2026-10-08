@@ -80,7 +80,12 @@
 # Version 17 (2026-10-07, Decision 0025, christiaslab/paes#98 brief): scripts/kit.py gains the `digests` subcommand that writes
 # adapters/kit-digests.txt at the origin, the kit_version and one digest per copy, read by the verifier's kit-copy-drift check;
 # the record is not an entry and does not travel with the kit. No entry changes.
-kit_version: 17
+# Version 18 (2026-10-08, the --draft request and the three kit findings of the forty-sixth session, christiaslab/paes#108): the push
+# script gains `--draft`, passed to `gh pr create` and to the REST payload and reported as `"draft"`, so a host with CODEOWNERS
+# asks no code owner to review until the maintainer marks the pull request ready; the installer refuses a source that resolves
+# to the same tree as the target, records the export's digest for a target-owned copy whose bytes equal the export's on
+# upgrade, and warns when a kit test copy tests a target-owned or changed module. No entry changes.
+kit_version: 18
 origin: paes
 entries:
   - role: copy

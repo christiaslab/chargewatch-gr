@@ -1,7 +1,7 @@
 # PAES kit notice
 
 origin: paes
-origin_commit: cebe25e6c4a5cdf9c7acab07b4290ec921a7688b
+origin_commit: 7e6629a8222abaa3597681bc3ff791eeda7c897d
 exported: 2026-10-08
 licence: MIT (the exported kit, Decision 0018; full text in the section below)
 copyright: Copyright (c) 2026 Panagiotis Christias
@@ -12,7 +12,7 @@ Files below marked with a digest are byte-identical copies of the origin; templa
 
 ## Digests
 
-ca8fa6308e028cc54cda64d4d56fbd0a6d4d12daa0bc4307dd689026724e16d3  adapters/kit-manifest.yaml
+023b6d483cfea7b8196ea98e8549275b0f59d2bddb7bbcf75cab8a83b4d8109a  adapters/kit-manifest.yaml
 template  adapters/project-spec.yaml
 template  .claude/settings.json
 3bf6f5e8f81c810f6d0bce337ee3772db707fdeaf1d5c09e245a74017c64d1db  .claude/skills/commit-guard/SKILL.md
@@ -26,17 +26,17 @@ d5972d79b8144e673153822e9fa3fa88be1a84ef8977ae334ae8a92fc100cf3a  scripts/test_h
 2af9569858100552e4eacd7398f4760a00f80247824fe90b963cb3533c772c36  scripts/pilot_core.py
 71a0f85e373f5e8123638f66b09aa89c7932470f859d172d2b79c57df70bea9a  scripts/commit_rules.py
 ec856309891382a227815f9fe2bfa726aa690bcff535e87f4a855858708902ef  scripts/test_commit_rules.py
-skipped  scripts/commit_hygiene.py  (the target's own file, not written by the kit)
+a955dcf377459e1671bf14678a431f540be2bdf9aa1c12223d7399c778aa5674  scripts/commit_hygiene.py
 473afcdbbb28650687873c93330a4db6b4c1c5cca9a04a370a870847390d8bf6  scripts/test_commit_hygiene.py
 d81f4adcd88eda8e20caa06cfa3419d8053b8e76a6d54df0b3ae40cdb8d48a1e  scripts/task_contract.py
 ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_task_contract.py
-4ba941e152c33610b2c4a73a9ee1dba633d40f72e37557beff906349485e0ae7  scripts/kit.py
+d2c304dfd40b1c45b92a3cb0e04d4f4c9a361f49e95ae8b92eee312dc7e41c0f  scripts/kit.py
 f527ce498a6c77e441925caeaa71e188821fb838f2ad20cae60b8193530370da  scripts/verify_kit.py
-783d7bb65dc5b68733110165a922b40472c4c3680f3130dacc83a39904f7301e  scripts/push_increment.py
-4a12e935425c481fda026cffe630baf4e8c689fd49ea73f619d69e0da9129045  scripts/test_push_increment.py
+4c8b0044a33f59949650ae26c83ba428c3b585286b9b63d62a3e6754bf39f5fe  scripts/push_increment.py
+ab2393dbed2dd28006700ebb7e6b379d1ec46221719c3abbfac682504e8a68e1  scripts/test_push_increment.py
 optional  .github/workflows/verify.yml  (written only when the installer is asked)
 a14e95714586d6bcd94860aa718b51155c3fd9042996eb64c6344e17b34fd0de  contracts/task-contract.yaml
-skipped  policies/contribution.md  (the target's own file, not written by the kit)
+7e089c846181f77b417b58677915bcd8741684c248c0d0c5bd4e1e74d0d358ac  policies/contribution.md
 540bc7ea87779c4086b261eb11208b2fd888336d4ef2aa7c491d06e492c75a73  policies/worktree-flow.md
 dcdbd608b95064455d4152ca387f89fa06601f9013b1846097ffe6ad36399474  policies/conform-review.md
 
@@ -47,6 +47,7 @@ The push script, scripts/push_increment.py, creates an increment branch in this 
 ## Upgrades
 
 - 2026-10-08: from origin commit 6d72ca87020e (kit version 12) to cebe25e6c4a5 (kit version 17); files written: 9; owned: none; refused: none
+- 2026-10-08: from origin commit cebe25e6c4a5 (kit version 17) to 7e6629a8222a (kit version 18); files written: 4; owned: none; refused: none
 
 ## Licence
 
