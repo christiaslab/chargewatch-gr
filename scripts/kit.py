@@ -35,6 +35,11 @@ in the notice instead of recording a digest the file no longer has.
 Kit v17 (Decision 0025): ``digests`` writes ``adapters/kit-digests.txt`` at the origin, the manifest's
 ``kit_version`` and one digest line per copy, read by the ``kit-copy-drift`` check of the repository verifier;
 the record stays at the origin and is not a manifest entry.
+Kit v18 (the three kit findings of the forty-sixth session): ``install`` refuses a source that resolves to the same tree
+as the target, since ``--from`` defaults to the current directory; an upgrade records the export's digest for a
+target-owned copy whose bytes equal the export's, so the kit check covers it from then on instead of leaving it
+``skipped``; and the report warns when a kit test copy (``scripts/test_<name>.py``) tests a module the target owns
+or changed, since ``verify_kit.py`` runs no test module.
 Standard library only.
 """
 from __future__ import annotations
@@ -54,7 +59,7 @@ DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
 DIGESTS = "adapters/kit-digests.txt"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18")
 # An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
 UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
@@ -569,10 +574,28 @@ def inside_target(destination: Path, target: Path) -> bool:
         return False
 
 
+def test_pairs(entries: list[Entry]) -> dict[str, list[str]]:
+    """kit v18: each kit test copy `scripts/test_<name>.py` with the copies it tests, `scripts/<name>.py` or any copy under
+    `scripts/<name>/`; a test with no such copy is left out."""
+    copies = [entry.target for entry in entries if entry.role == "copy"]
+    pairs: dict[str, list[str]] = {}
+    for path in copies:
+        match = re.fullmatch(r"scripts/test_([a-z0-9_]+)\.py", path)
+        if match:
+            name = match.group(1)
+            modules = [other for other in copies if other == f"scripts/{name}.py" or other.startswith(f"scripts/{name}/")]
+            if modules:
+                pairs[path] = modules
+    return pairs
+
+
 def install(source: Path, target: Path, project_name: str, report_path: Path | None, ci: bool = False,
             upgrade: bool = False, take_as_own: tuple[str, ...] = ()) -> dict[str, object]:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", project_name):
         raise ValueError("project name must be 1 to 64 characters of letters, digits, space, dot, underscore or hyphen")
+    if source.resolve() == target.resolve():
+        # kit v18, finding 3: --from defaults to the current directory, so a run from inside the target would upgrade it from itself
+        raise ValueError(f"the source and the target are the same tree ({target}); pass --from the export or the PAES root")
     entries = load_manifest(source)
     installed: dict[str, str] = {}
     if upgrade:
@@ -661,6 +684,10 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
                                      f"with --own {entry.target} to keep the change as the target's own")
                 continue
         elif destination.exists():
+            if upgrade and entry.role == "copy" and sha256_file(destination) == sha256_file(source / entry.source):
+                # kit v18, finding 2: a target-owned copy back at the export's bytes is digest-checked from now on
+                skipped.append((entry.target, "the target's own file, at the export's bytes; the notice now records its digest"))
+                continue
             skipped.append((entry.target, "exists in the target; not overwritten"))
             if entry.role == "copy":
                 own.add(entry.target)
@@ -707,6 +734,12 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
             proposals.append("--ci: the `none` backend has no review tool and no CI template; the maintainer's own CI, if any, runs the verification command")
         else:
             proposals.append(f"--ci: no CI template exists for the `{backend}` backend; a template joins the kit once a target on that host has tried it (Decision 0017 point 4)")
+    for test_path, module_paths in test_pairs(entries).items():
+        # kit v18, finding 1: the kit check runs no test module, so a kit test over a target-owned or changed module is named here
+        affected = [path for path in module_paths if path in own or path in changed]
+        if affected and test_path not in own:
+            proposals.append(f"{test_path}: the kit's test copy tests {', '.join(affected)}, which the target owns or changed; "
+                             f"run `python3 -m unittest {test_path}` in the target, since {VERIFICATION_COMMAND} runs no test module")
     for path in take_as_own:
         if path not in owned:
             # kit v14: --own acts only on a kit-written copy the target changed, during an upgrade

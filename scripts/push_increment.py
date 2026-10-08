@@ -29,6 +29,9 @@ no HTTP call and reads no token; authentication belongs to the provider's CLI
 and the environment. The verification command is the specification's and
 the provider's CLI is found on PATH by name: no option overrides either, so
 the allow entry a target carries cannot be turned into a bypass of the gate.
+Kit version eighteen: ``--draft`` (default off) opens the review as a draft, so a host that asks code owners
+(``CODEOWNERS``) to review every ready pull request asks none until the maintainer marks it ready; the
+report says ``"draft": true`` or ``false``, the flag as given, also when an existing open review is reused.
 Standard library only; runs ``git`` and the provider's CLI as subprocesses.
 Prints one JSON document; exit 0 when the branch is on ``origin`` and the
 review step of its backend is done, 1 otherwise.
@@ -168,13 +171,13 @@ def rest_open_review(root: Path, branch: str, cli: str) -> str | None:
     return url if isinstance(url, str) and url else None
 
 
-def rest_create(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, str | None]:
+def rest_create(root: Path, branch: str, title: str, body: str, cli: str, draft: bool = False) -> tuple[str | None, str | None]:
     """Open the pull request through REST with ``gh api``; returns (url, error)."""
     repository = origin_repository(root)
     if repository is None:
         return None, f"the REST fallback was skipped: {REMOTE} names no GitHub owner and repository"
     owner, repo = repository
-    payload = json.dumps({"title": title, "head": branch, "base": "main", "body": body})
+    payload = json.dumps({"title": title, "head": branch, "base": "main", "body": body, "draft": draft})
     run = subprocess.run([cli, "api", "--method", "POST", f"repos/{owner}/{repo}/pulls", "--input", "-"],
                          cwd=root, input=payload, capture_output=True, text=True)
     if run.returncode != 0:
@@ -196,15 +199,15 @@ def open_review(root: Path, branch: str, cli: str) -> str | None:
     return found.stdout.strip().splitlines()[0] if found.stdout.strip() else None
 
 
-def github_backend(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, bool, str | None, str | None]:
+def github_backend(root: Path, branch: str, title: str, body: str, cli: str, draft: bool = False) -> tuple[str | None, bool, str | None, str | None]:
     existing = open_review(root, branch, cli)
     if existing:
         return existing, False, None, None
-    run = subprocess.run([cli, "pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body],
-                         cwd=root, capture_output=True, text=True)
+    run = subprocess.run([cli, "pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body]
+                         + (["--draft"] if draft else []), cwd=root, capture_output=True, text=True)
     if run.returncode != 0:
         cli_error = f"{Path(cli).name} pr create failed: {run.stderr.strip()[:200]}"
-        url, rest_error = rest_create(root, branch, title, body, cli)
+        url, rest_error = rest_create(root, branch, title, body, cli, draft)
         if url is None:
             return None, False, f"{cli_error}; {rest_error}; the branch is pushed, open the review by hand", None
         return url, True, None, "rest"
@@ -216,7 +219,7 @@ def github_backend(root: Path, branch: str, title: str, body: str, cli: str) -> 
     return url, True, None, "cli"
 
 
-def none_backend(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, bool, str | None, str | None]:
+def none_backend(root: Path, branch: str, title: str, body: str, cli: str, draft: bool = False) -> tuple[str | None, bool, str | None, str | None]:
     return None, False, None, None
 
 
@@ -225,7 +228,7 @@ BACKENDS = {"github": github_backend, "none": none_backend}
 BACKEND_CLI = {"github": "gh", "none": None}
 
 
-def publish(root: Path, title: str | None, body_file: Path | None) -> dict[str, object]:
+def publish(root: Path, title: str | None, body_file: Path | None, draft: bool = False) -> dict[str, object]:
     sys.path.insert(0, str(root / "scripts"))
     branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
     problems = refusals(root, branch)
@@ -255,11 +258,11 @@ def publish(root: Path, title: str | None, body_file: Path | None) -> dict[str, 
     git(root, "fetch", REMOTE)
     git(root, "push", "--set-upstream", REMOTE, branch)
     body = clean_body(body_file.read_text(encoding="utf-8") if body_file else default_body(root, branch, verify_command, verification))
-    url, created, error, route = BACKENDS[backend](root, branch, title, body, cli or "")
+    url, created, error, route = BACKENDS[backend](root, branch, title, body, cli or "", draft)
     if error:
         return {"result": "FAIL", "branch": branch, "pushed_to": REMOTE, "backend": backend, "refused": [error]}
     report: dict[str, object] = {"result": "PASS", "branch": branch, "pushed_to": REMOTE, "backend": backend,
-                                 "pull_request": url, "created": created, "verification": verification,
+                                 "pull_request": url, "created": created, "draft": draft, "verification": verification,
                                  "merge": "left to the maintainer"}
     if route:
         report["route"] = route
@@ -273,9 +276,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--title", help="review title; default: the last commit subject")
     parser.add_argument("--body-file", type=Path, help="review body; default: the commit subjects and the verification result")
+    parser.add_argument("--draft", action="store_true", help="open the review as a draft, so code owners are not requested yet (kit v18)")
     args = parser.parse_args(argv)
     try:
-        report = publish(args.root.resolve(), args.title, args.body_file)
+        report = publish(args.root.resolve(), args.title, args.body_file, args.draft)
     except (subprocess.CalledProcessError, OSError) as error:
         detail = getattr(error, "stderr", "") or str(error)
         report = {"result": "FAIL", "refused": [f"{type(error).__name__}: {str(detail).strip()[:200]}"]}
