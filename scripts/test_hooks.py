@@ -21,6 +21,8 @@ SESSION_START = REPOSITORY_ROOT / "scripts/hooks/session_start.py"
 SECRETS_GUARD = REPOSITORY_ROOT / "scripts/hooks/pre_tool_secrets_guard.py"
 # Decision 0019: the event feed is PAES-only (point 7); its tests run where the script is and skip in a kit target.
 EVENT_FEED = REPOSITORY_ROOT / "scripts/hooks/event_feed.py"
+# Decision 0024: the context guard is PAES-only; its tests run where the script is and skip in a kit target.
+CONTEXT_GUARD = REPOSITORY_ROOT / "scripts/hooks/context_guard.py"
 # The fixtures below must themselves pass the write-time and commit-time guards, so the
 # secret-like words are assembled at runtime instead of appearing as literals in this file.
 WORD_TOKEN = "tok" + "en"
@@ -570,6 +572,135 @@ class EventFeedHermeticTest(EventFeedFixture):
         self.assertEqual(len(self.records()), 3)
         ignore = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
         self.assertIn("logs/", ignore)
+
+
+@unittest.skipUnless(CONTEXT_GUARD.is_file(), "the context guard is PAES-only (Decision 0024)")
+class ContextGuardTest(HookFixture):
+    DENIED = ("Agent", "Task", "Edit", "Write", "MultiEdit", "NotebookEdit")
+
+    def transcript(self, *usages: dict, extra: str = "") -> Path:
+        path = self.root / "transcript.jsonl"
+        lines = [json.dumps({"type": "user", "message": {"content": "hello"}})]
+        for usage in usages:
+            lines.append(json.dumps({"type": "assistant", "message": {"usage": usage}}))
+            lines.append(json.dumps({"type": "user", "message": {"content": "tool result"}}))
+        path.write_text("\n".join(lines) + "\n" + extra, encoding="utf-8")
+        return path
+
+    def window(self, total: int) -> Path:
+        return self.transcript({"input_tokens": 10, "cache_read_input_tokens": total - 1010, "cache_creation_input_tokens": 1000})
+
+    def guard(self, transcript: Path | None, tool: str, tool_input: dict | None = None) -> subprocess.CompletedProcess[str]:
+        payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input or {}}
+        if transcript is not None:
+            payload["transcript_path"] = str(transcript)
+        return run_hook(CONTEXT_GUARD, self.root, json.dumps(payload))
+
+    def decision(self, result: subprocess.CompletedProcess[str]) -> dict:
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "PreToolUse")
+        return output
+
+    @staticmethod
+    def input_for(tool: str, target: str) -> dict:
+        return {"notebook_path": target} if tool == "NotebookEdit" else {"file_path": target, "content": "x"}
+
+    def test_sum_is_taken_from_the_last_assistant_usage_and_below_warn_prints_nothing(self) -> None:
+        early = {"input_tokens": 120_000, "cache_read_input_tokens": 50_000, "cache_creation_input_tokens": 1}
+        last = {"input_tokens": 3, "cache_read_input_tokens": 90_000, "cache_creation_input_tokens": 19_000, "output_tokens": 999_999}
+        result = self.guard(self.transcript(early, last), "Write", {"file_path": "README.md"})
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        last["cache_creation_input_tokens"] = 20_000  # 110,003: now above the warning, and the figure is the last sum
+        output = self.decision(self.guard(self.transcript(early, last), "Read", {"file_path": "README.md"}))
+        self.assertIn("110,003 tokens", output["additionalContext"])
+
+    def test_top_level_usage_is_accepted(self) -> None:
+        path = self.root / "transcript.jsonl"
+        path.write_text(json.dumps({"type": "assistant", "usage": {"input_tokens": 120_000}}) + "\n", encoding="utf-8")
+        self.assertIn("120,000 tokens", self.decision(self.guard(path, "Bash"))["additionalContext"])
+
+    def test_above_warn_returns_additional_context_with_the_figure(self) -> None:
+        for tool in self.DENIED + ("Bash", "Read"):
+            with self.subTest(tool=tool):
+                output = self.decision(self.guard(self.window(120_500), tool, self.input_for(tool, "src/app.py")))
+                self.assertNotIn("permissionDecision", output)
+                self.assertIn("context guard: 120,500 tokens in the window, above 110,000", output["additionalContext"])
+                self.assertIn("Decision 0024", output["additionalContext"])
+
+    def test_above_hard_denies_write_and_spawn_tools_only(self) -> None:
+        transcript = self.window(160_000)
+        for tool in self.DENIED:
+            with self.subTest(tool=tool):
+                output = self.decision(self.guard(transcript, tool, self.input_for(tool, "src/app.py")))
+                self.assertEqual(output["permissionDecision"], "deny")
+                self.assertIn("160,000 tokens in the window, above 150,000", output["permissionDecisionReason"])
+                self.assertIn("python3 scripts/push_increment.py", output["permissionDecisionReason"])
+        for tool, tool_input in (("Bash", {"command": "python3 scripts/verify_repository.py"}), ("Read", {"file_path": "src/app.py"})):
+            with self.subTest(tool=tool):
+                output = self.decision(self.guard(transcript, tool, tool_input))
+                self.assertNotIn("permissionDecision", output)
+                self.assertIn("160,000 tokens", output["additionalContext"])
+
+    def test_above_hard_the_handoff_agents_md_and_a_brief_stay_writable_and_agent_does_not(self) -> None:
+        transcript = self.window(200_000)
+        for relative in ("docs/SESSION_HANDOFF_2026-10-07_X.md", "AGENTS.md", "tasks/x.json"):
+            for target in (relative, str(self.root / relative)):
+                for tool in ("Write", "Edit", "MultiEdit"):
+                    with self.subTest(target=target, tool=tool):
+                        output = self.decision(self.guard(transcript, tool, {"file_path": target}))
+                        self.assertNotIn("permissionDecision", output)
+                        self.assertIn("200,000 tokens", output["additionalContext"])
+        for target in ("docs/SESSION_HANDOFF_X.txt", "docs/old/SESSION_HANDOFF_X.md", "tasks/sub/x.json", "sub/AGENTS.md",
+                       "../AGENTS.md", "/elsewhere/AGENTS.md", "tasks/x.json.bak"):
+            with self.subTest(target=target):
+                self.assertEqual(self.decision(self.guard(transcript, "Write", {"file_path": target}))["permissionDecision"], "deny")
+        agent = self.decision(self.guard(transcript, "Agent", {"file_path": "AGENTS.md", "prompt": "x"}))
+        self.assertEqual(agent["permissionDecision"], "deny")
+
+    def test_a_symbolic_link_named_like_an_exempt_file_is_judged_by_its_target(self) -> None:
+        transcript = self.window(160_000)
+        (self.root / "tasks").mkdir()
+        (self.root / "docs").mkdir()
+        (self.root / "scripts/x.py").write_text("x = 1\n", encoding="utf-8")
+        outside = Path(self._tmp.name + "-outside.md")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        outside.write_text("outside\n", encoding="utf-8")
+        (self.root / "tasks/brief.json").symlink_to(self.root / "scripts/x.py")
+        (self.root / "docs/SESSION_HANDOFF_link.md").symlink_to(outside)
+        for target in ("tasks/brief.json", str(self.root / "tasks/brief.json"),
+                       "docs/SESSION_HANDOFF_link.md", str(self.root / "docs/SESSION_HANDOFF_link.md")):
+            with self.subTest(target=target):
+                self.assertEqual(self.decision(self.guard(transcript, "Write", {"file_path": target}))["permissionDecision"], "deny")
+        (self.root / "tasks/real.json").write_text("{}\n", encoding="utf-8")
+        for target in ("tasks/real.json", "docs/SESSION_HANDOFF_new.md"):
+            with self.subTest(target=target):
+                self.assertNotIn("permissionDecision", self.decision(self.guard(transcript, "Edit", {"file_path": target})))
+
+    def assert_fails_open(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), 1, result.stderr)
+        self.assertTrue(lines[0].startswith("context guard:"))
+        self.assertNotIn(MARKER, result.stderr)
+
+    def test_fails_open_with_one_stderr_line(self) -> None:
+        cases = {
+            "missing transcript_path": self.guard(None, "Write", {"file_path": MARKER}),
+            "nonexistent file": self.guard(self.root / "absent.jsonl", "Write", {"file_path": MARKER}),
+        }
+        cases["malformed line"] = self.guard(self.transcript({"input_tokens": 200_000}, extra=MARKER + " {not json\n"),
+                                             "Write", {"file_path": MARKER})
+        no_usage = self.root / "no-usage.jsonl"
+        no_usage.write_text(json.dumps({"type": "assistant", "message": {"content": MARKER}}) + "\n", encoding="utf-8")
+        cases["no usage"] = self.guard(no_usage, "Write", {"file_path": MARKER})
+        cases["malformed stdin"] = run_hook(CONTEXT_GUARD, self.root, "{" + MARKER)
+        cases["stdin not an object"] = run_hook(CONTEXT_GUARD, self.root, json.dumps([MARKER]))
+        for name, result in cases.items():
+            with self.subTest(case=name):
+                self.assert_fails_open(result)
 
 
 if __name__ == "__main__":

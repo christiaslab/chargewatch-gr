@@ -14,6 +14,10 @@ release_authority: same as maintainer
 verification_command: python3 scripts/verify_kit.py
 handoff_pointer: none
 integration: push script: github
+# Author emails whose commits may carry a Signed-off-by trailer (kit v14, docs/decisions.md #16: Dependabot's
+# sign-off cannot be switched off); the commit-history check stays strict for everyone else.
+bot_authors:
+  - 49699333+dependabot[bot]@users.noreply.github.com
 guidance_files:
   - CLAUDE.md
   - AGENTS.md

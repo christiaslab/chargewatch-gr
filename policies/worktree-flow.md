@@ -1,6 +1,6 @@
 # Worktree flow policy
 
-Status: added 2026-09-24 under Decision 0008 point 8 (increment 2); rules 5, 6 and 11 brought level with Decision 0013 on 2026-10-03 with the fetch-and-fast-forward step of the retirement routine (brief `tasks/worktree-retire-prune.json`); the local rules are in force as documented guidance; the remote rules are in force from Decision 0010, accepted 2026-09-26, from the first push onward
+Status: added 2026-09-24 under Decision 0008 point 8 (increment 2); rules 5, 6 and 11 brought level with Decision 0013 on 2026-10-03 with the fetch-and-fast-forward step of the retirement routine (brief `tasks/worktree-retire-prune.json`); rule 3 gained the same-checkout variant for a sandboxed project on 2026-10-07 (brief `tasks/kit-v14-sandbox-spec-and-bots.json`); the local rules are in force as documented guidance; the remote rules are in force from Decision 0010, accepted 2026-09-26, from the first push onward
 
 Provenance: reimplemented from the documented behaviour of the agent-skills worktree-flow doctrine at `adb5af6` and from section 3 of the Nebula scope-fit review of 2026-09-20; no text was copied from either source.
 
@@ -14,6 +14,12 @@ Provenance: reimplemented from the documented behaviour of the agent-skills work
    git worktree add ../<repository>-<slug> -b <type>/<slug> main
    ```
 
+   When the project specification (`adapters/project-spec.yaml`) says `sandbox: on`, the worktree is `.worktrees/<slug>` inside the primary checkout instead, because the sandbox writes only inside the checkout; `.worktrees/` is listed in `.gitignore`, the sandbox's write list never gains the parent directory, and rule 6 removes `.worktrees/<slug>` in place of the sibling path. Without the sandbox the sibling directory stays the default:
+
+   ```sh
+   git worktree add .worktrees/<slug> -b <type>/<slug> main
+   ```
+
 4. **Verification before integration.** `python3 scripts/verify_repository.py` must print `"result": "PASS"` in the worktree before the branch is merged. The check `declared-remote-only` accepts a linked worktree.
 5. **Integration is the pull request, merged by the maintainer.** Since Decision 0013 the maintainer merges the increment's pull request on the forge with a rebase merge once the CI job is green: the increment's commits are replayed onto `main` one by one with new hashes, so the commits remain the record and `main` gains no merge commit and no squash. `main`'s own history is never rewritten. The primary checkout receives `main` only by fast-forward from `origin` (rule 6) and is then verified. Before the first push (2026-09-24 to 2026-09-26) the maintainer fast-forwarded the branch locally instead; that path is closed by rule 9.
 6. **Retire immediately, in order.** After the maintainer merges the pull request, bring the primary checkout level with the remote, then remove the worktree and delete the branch, in the same step and from the primary checkout:
@@ -24,6 +30,8 @@ Provenance: reimplemented from the documented behaviour of the agent-skills work
    git worktree remove ../<repository>-<slug>
    git branch -D <type>/<slug>
    ```
+
+   Under `sandbox: on` the third command is `git worktree remove .worktrees/<slug>` (rule 3).
 
    `--ff-only` refuses when local `main` has diverged, which is a finding, not a case for a merge commit. `-D` is deliberate: the rebase merge gave the commits new hashes and the prune removed the remote-tracking branch, so `git branch -d` would judge the branch against `HEAD`, find none of its commits there and refuse as not fully merged. `-D` is run only after the forge reports the pull request merged, which the prune has shown by dropping `origin/<type>/<slug>`. A hand-off written before the merge quotes the branch hash, not the hash that reaches `main`. An abandoned increment is removed the same way, explicitly, and the session hand-off records that it was abandoned and why. Nothing is left to be found later.
 7. **Evidence is never removed with a worktree.** A worktree that holds an unrecorded run, a new evidence file or a new hand-off is not removed until that record is committed on its branch or explicitly abandoned in a hand-off. Automatic removal of worktrees is not permitted.

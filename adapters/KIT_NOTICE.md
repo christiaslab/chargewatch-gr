@@ -1,18 +1,18 @@
 # PAES kit notice
 
 origin: paes
-origin_commit: 6d72ca87020e979d80d644759ccb0c2140651ee9
-exported: 2026-10-06
+origin_commit: cebe25e6c4a5cdf9c7acab07b4290ec921a7688b
+exported: 2026-10-08
 licence: MIT (the exported kit, Decision 0018; full text in the section below)
 copyright: Copyright (c) 2026 Panagiotis Christias
 
 The exported kit is granted under the MIT licence; inside the origin repository the same files are AGPL-3.0-only, and the MIT grant attaches to exactly the files the manifest lists at the origin commit, byte-identical copies and rendered templates alike.
 
-Files below marked with a digest are byte-identical copies of the origin; templates are filled at install time and are not digest-checked; a line marked `skipped` names a file the target already had, which the installer left alone and does not digest-check.
+Files below marked with a digest are byte-identical copies of the origin; templates are filled at install time and are not digest-checked; a line marked `skipped` names a file the target already had, which the installer left alone and does not digest-check; a line marked `modified` names a copy the kit wrote and the target changed since, which the maintainer took as the target's own with `install --upgrade --own <path>` and which is not digest-checked until it is back at a kit digest.
 
 ## Digests
 
-3767e506fe0c6d511d0206054188a610dcf20761bb7fdb2fe281103638989c22  adapters/kit-manifest.yaml
+ca8fa6308e028cc54cda64d4d56fbd0a6d4d12daa0bc4307dd689026724e16d3  adapters/kit-manifest.yaml
 template  adapters/project-spec.yaml
 template  .claude/settings.json
 3bf6f5e8f81c810f6d0bce337ee3772db707fdeaf1d5c09e245a74017c64d1db  .claude/skills/commit-guard/SKILL.md
@@ -21,24 +21,32 @@ template  .claude/skills/publish-increment/SKILL.md
 template  AGENTS.md
 6b606150f8cca139f7df50a391261780fb6c86ece5d0f70863457211ba1f5ce1  scripts/hooks/session_start.py
 ff01e4eb1927897ec3427e37e3be89dd11eb4a8792031f639ea36309cefc0d0c  scripts/hooks/pre_tool_secrets_guard.py
-287615111a1cc67067caa57ab1f223ed3b69e9942e91274ba263988c4752d57c  scripts/test_hooks.py
+d5972d79b8144e673153822e9fa3fa88be1a84ef8977ae334ae8a92fc100cf3a  scripts/test_hooks.py
 31a907772711bbc69804c838905b41ae99d27a3f0bb85f0cb4623db9debf497f  scripts/commit_guard.py
 2af9569858100552e4eacd7398f4760a00f80247824fe90b963cb3533c772c36  scripts/pilot_core.py
 71a0f85e373f5e8123638f66b09aa89c7932470f859d172d2b79c57df70bea9a  scripts/commit_rules.py
 ec856309891382a227815f9fe2bfa726aa690bcff535e87f4a855858708902ef  scripts/test_commit_rules.py
-skipped  scripts/commit_hygiene.py  (the target's own file since 2026-10-07: Dependabot sign-off exemption, docs/decisions.md #16)
-57fa8a1068562f29b93c60dfca40ec6a59d8396da5f60e6f46a5d81e87d55077  scripts/test_commit_hygiene.py
+skipped  scripts/commit_hygiene.py  (the target's own file, not written by the kit)
+473afcdbbb28650687873c93330a4db6b4c1c5cca9a04a370a870847390d8bf6  scripts/test_commit_hygiene.py
 d81f4adcd88eda8e20caa06cfa3419d8053b8e76a6d54df0b3ae40cdb8d48a1e  scripts/task_contract.py
 ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_task_contract.py
-99b22598cf449b5e8e9af030f51f2fd1070d4c70fb352f8056d9f25276782c9b  scripts/kit.py
-20b627e77b19a7e7cc4abf0622deea8333f775bc2998fe2086eb6e1f712724c7  scripts/verify_kit.py
-637becd2771c5164ff7e47a903c79052e1bb944acd95a6b42e2a502db8daab25  scripts/push_increment.py
-c587efe016effcd9eba40ac38cb0e072602ce7bad5a3e67ee8c985ab16ad0e4e  scripts/test_push_increment.py
+4ba941e152c33610b2c4a73a9ee1dba633d40f72e37557beff906349485e0ae7  scripts/kit.py
+f527ce498a6c77e441925caeaa71e188821fb838f2ad20cae60b8193530370da  scripts/verify_kit.py
+783d7bb65dc5b68733110165a922b40472c4c3680f3130dacc83a39904f7301e  scripts/push_increment.py
+4a12e935425c481fda026cffe630baf4e8c689fd49ea73f619d69e0da9129045  scripts/test_push_increment.py
 optional  .github/workflows/verify.yml  (written only when the installer is asked)
 a14e95714586d6bcd94860aa718b51155c3fd9042996eb64c6344e17b34fd0de  contracts/task-contract.yaml
-skipped  policies/contribution.md  (the target's own file since 2026-10-07: Dependabot sign-off exemption, docs/decisions.md #16)
-1d6e20ff914b4c09d61680a56cbbae002297ba5c4259eba99c5ebc8d3adc9a5c  policies/worktree-flow.md
-34686667a0e66d5192ec089cc6709231096f31bce7e009377863758e42fd6395  policies/conform-review.md
+skipped  policies/contribution.md  (the target's own file, not written by the kit)
+540bc7ea87779c4086b261eb11208b2fd888336d4ef2aa7c491d06e492c75a73  policies/worktree-flow.md
+dcdbd608b95064455d4152ca387f89fa06601f9013b1846097ffe6ad36399474  policies/conform-review.md
+
+## Retiring an increment branch
+
+The push script, scripts/push_increment.py, creates an increment branch in this repository and opens its pull request; it never merges and never deletes. After the maintainer merges, and only once the forge shows the merge (`git ls-remote --heads origin` no longer lists the branch), retire it from the primary checkout, in order, as policies/worktree-flow.md rule 6 says: `git fetch --prune origin`, `git merge --ff-only origin/main`, `git worktree remove <worktree>` when a worktree holds the branch, then `git branch -D <branch>`.
+
+## Upgrades
+
+- 2026-10-08: from origin commit 6d72ca87020e (kit version 12) to cebe25e6c4a5 (kit version 17); files written: 9; owned: none; refused: none
 
 ## Licence
 

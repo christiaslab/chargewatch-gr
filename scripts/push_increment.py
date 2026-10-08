@@ -13,9 +13,15 @@ push --set-upstream``, the attribution-stripped body and the one JSON report.
 The step "open the review" runs behind a backend named by the ``integration``
 field of ``adapters/project-spec.yaml``:
 
-    push script: github   gh pr view, gh pr create
+    push script: github   gh pr list --state open, gh pr create; when pr create fails,
+                          gh api POST repos/<owner>/<repo>/pulls (REST) once
     push script: none     push only; the maintainer opens the review by hand
     maintainer pushes     the script refuses to run
+
+The REST fallback serves hosts where GitHub's GraphQL endpoint is blocked and
+REST is not (owner ruling 2026-10-07); owner and repository come from the
+configured ``origin`` URL, never from ``gh repo view``, which is GraphQL. The
+report's ``route`` says which path created the review: ``cli`` or ``rest``.
 
 The backend set is closed and trial-driven (point 4): ``azure-devops`` and
 others join it only once a target on that host has tried them. The core makes
@@ -124,28 +130,94 @@ def default_body(root: Path, branch: str, verify_command: str, verification: str
 
 
 # Backends. Each takes the root, the branch, the title, the cleaned body and the CLI executable, and returns
-# (url, created, error): the review's URL when one exists, whether this call created it, and an error text
-# when the provider's CLI refused. A backend runs the provider's own CLI and nothing else.
+# (url, created, error, route): the review's URL when one exists, whether this call created it, an error text
+# when the provider's CLI refused, and the path that created it. A backend runs the provider's CLI and a read of the
+# configured origin URL, and nothing else; no error or report text carries that URL, which may hold a credential.
 
-def github_backend(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, bool, str | None]:
-    view = subprocess.run([cli, "pr", "view", branch, "--json", "url", "--jq", ".url"], cwd=root, capture_output=True, text=True)
-    if view.returncode == 0 and view.stdout.strip():
-        return view.stdout.strip(), False, None
+GITHUB_URL = re.compile(r"^(?:git@github\.com:|ssh://git@github\.com/|https://(?:[^@/]+@)?github\.com/)"
+                        r"(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+
+
+def github_repository(url: str) -> tuple[str, str] | None:
+    """Owner and repository from a GitHub remote URL, SSH or HTTPS form; None for any other URL, a local path included."""
+    match = GITHUB_URL.match(url.strip())
+    return (match["owner"], match["repo"]) if match else None
+
+
+def origin_repository(root: Path) -> tuple[str, str] | None:
+    """Owner and repository of the configured origin URL. The configured URL is read, not ``git remote get-url``,
+    which expands ``insteadOf`` rewrites into a URL that may no longer name the repository."""
+    configured = subprocess.run(["git", "config", "--get", f"remote.{REMOTE}.url"], cwd=root, capture_output=True, text=True).stdout.strip()
+    return github_repository(configured)
+
+
+def rest_open_review(root: Path, branch: str, cli: str) -> str | None:
+    """The open pull request for this branch through REST, for hosts where ``gh pr list`` (GraphQL) is blocked."""
+    repository = origin_repository(root)
+    if repository is None:
+        return None
+    owner, repo = repository
+    found = subprocess.run([cli, "api", "--method", "GET", f"repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=open"],
+                           cwd=root, capture_output=True, text=True)
+    if found.returncode != 0:
+        return None
+    try:
+        url = json.loads(found.stdout)[0]["html_url"]
+    except (json.JSONDecodeError, IndexError, KeyError, TypeError):
+        return None
+    return url if isinstance(url, str) and url else None
+
+
+def rest_create(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, str | None]:
+    """Open the pull request through REST with ``gh api``; returns (url, error)."""
+    repository = origin_repository(root)
+    if repository is None:
+        return None, f"the REST fallback was skipped: {REMOTE} names no GitHub owner and repository"
+    owner, repo = repository
+    payload = json.dumps({"title": title, "head": branch, "base": "main", "body": body})
+    run = subprocess.run([cli, "api", "--method", "POST", f"repos/{owner}/{repo}/pulls", "--input", "-"],
+                         cwd=root, input=payload, capture_output=True, text=True)
+    if run.returncode != 0:
+        return None, f"{Path(cli).name} api (REST) failed: {(run.stderr.strip() or run.stdout.strip())[:200]}"
+    try:
+        url = json.loads(run.stdout)["html_url"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None, f"{Path(cli).name} api (REST) replied without html_url: {run.stdout.strip()[:200]}"
+    return (url, None) if isinstance(url, str) and url else (None, f"{Path(cli).name} api (REST) replied with an empty html_url")
+
+def open_review(root: Path, branch: str, cli: str) -> str | None:
+    """The URL of the OPEN pull request whose head is this branch, or None. A merged or closed one that once
+    used the same branch name does not count (``gh pr view <branch>`` would return it, so it is not used).
+    When ``gh pr list`` fails (GraphQL blocked), the lookup is tried once through REST."""
+    found = subprocess.run([cli, "pr", "list", "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url // empty"],
+                           cwd=root, capture_output=True, text=True)
+    if found.returncode != 0:
+        return rest_open_review(root, branch, cli)
+    return found.stdout.strip().splitlines()[0] if found.stdout.strip() else None
+
+
+def github_backend(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, bool, str | None, str | None]:
+    existing = open_review(root, branch, cli)
+    if existing:
+        return existing, False, None, None
     run = subprocess.run([cli, "pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body],
                          cwd=root, capture_output=True, text=True)
     if run.returncode != 0:
-        return None, False, f"{Path(cli).name} pr create failed: {run.stderr.strip()[:200]}"
+        cli_error = f"{Path(cli).name} pr create failed: {run.stderr.strip()[:200]}"
+        url, rest_error = rest_create(root, branch, title, body, cli)
+        if url is None:
+            return None, False, f"{cli_error}; {rest_error}; the branch is pushed, open the review by hand", None
+        return url, True, None, "rest"
     url = run.stdout.strip().splitlines()[-1] if run.stdout.strip() else None
     if url is None:
-        view = subprocess.run([cli, "pr", "view", branch, "--json", "url", "--jq", ".url"], cwd=root, capture_output=True, text=True)
-        url = view.stdout.strip() or None if view.returncode == 0 else None
+        url = open_review(root, branch, cli)
     if url is None:
-        return None, True, f"{Path(cli).name} pr create printed no URL and pr view found none; the branch is pushed, check the review by hand"
-    return url, True, None
+        return None, True, f"{Path(cli).name} pr create printed no URL and pr list found no open one; the branch is pushed, check the review by hand", None
+    return url, True, None, "cli"
 
 
-def none_backend(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, bool, str | None]:
-    return None, False, None
+def none_backend(root: Path, branch: str, title: str, body: str, cli: str) -> tuple[str | None, bool, str | None, str | None]:
+    return None, False, None, None
 
 
 BACKENDS = {"github": github_backend, "none": none_backend}
@@ -183,12 +255,14 @@ def publish(root: Path, title: str | None, body_file: Path | None) -> dict[str, 
     git(root, "fetch", REMOTE)
     git(root, "push", "--set-upstream", REMOTE, branch)
     body = clean_body(body_file.read_text(encoding="utf-8") if body_file else default_body(root, branch, verify_command, verification))
-    url, created, error = BACKENDS[backend](root, branch, title, body, cli or "")
+    url, created, error, route = BACKENDS[backend](root, branch, title, body, cli or "")
     if error:
         return {"result": "FAIL", "branch": branch, "pushed_to": REMOTE, "backend": backend, "refused": [error]}
     report: dict[str, object] = {"result": "PASS", "branch": branch, "pushed_to": REMOTE, "backend": backend,
                                  "pull_request": url, "created": created, "verification": verification,
                                  "merge": "left to the maintainer"}
+    if route:
+        report["route"] = route
     if backend == "none":
         report["review"] = f"the maintainer opens the review of branch {branch!r} by hand; no review tool is configured"
     return report

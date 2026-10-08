@@ -30,6 +30,8 @@ RESTRICTED_VALUES = {NO_BYPASS_KEY: "disable", "disableAutoMode": "disable"}
 HOOK_COMMAND = re.compile(r'^python3 "\$CLAUDE_PROJECT_DIR"/(scripts/hooks/[a-z0-9_]+\.py)$')
 _DIGEST_LINE = re.compile(r"^([0-9a-f]{64})  (\S+)$", re.MULTILINE)
 _SKIPPED_LINE = re.compile(r"^skipped  (\S+)  ", re.MULTILINE)
+# Kit v14: a copy the kit wrote and the target changed since; like a `skipped` line, not digest-checked.
+_MODIFIED_LINE = re.compile(r"^modified  (\S+)  ", re.MULTILINE)
 # The first fenced command under "## Verification" in AGENTS.md, as the session banner reads it.
 _AGENTS_VERIFICATION = re.compile(r"^## Verification\n.*?```[a-z]*\n([^\n]+)\n", re.MULTILINE | re.DOTALL)
 # Kit v6 (Decision 0017 point 5): the one shape of a skill. Front matter with name and a description that names
@@ -118,7 +120,7 @@ def check_project_spec(root: Path) -> tuple[bool, str]:
     except ValueError as error:
         return False, f"{kit.SPEC}: {error}"
     problems = []
-    missing = [field for field in kit.SPEC_FIELDS if field not in spec]
+    missing = [field for field in kit.SPEC_FIELDS if field not in spec and field not in kit.SPEC_OPTIONAL_FIELDS]
     unknown = [field for field in spec if field not in kit.SPEC_FIELDS]
     if missing:
         problems.append("missing fields: " + ", ".join(missing))
@@ -127,7 +129,7 @@ def check_project_spec(root: Path) -> tuple[bool, str]:
     if spec.get("spec_version") != kit.SPEC_VERSION:
         problems.append(f"spec_version is {spec.get('spec_version')!r}, expected {kit.SPEC_VERSION}")
     for field in kit.SPEC_FIELDS:
-        if field in missing:
+        if field not in spec:
             continue
         value = spec[field]
         if field in kit.SPEC_LIST_FIELDS:
@@ -135,6 +137,8 @@ def check_project_spec(root: Path) -> tuple[bool, str]:
                 problems.append(f"{field} must be a list")
         elif not isinstance(value, str) or not value:
             problems.append(f"{field} must be one non-empty value")
+        elif field == "sandbox" and value not in kit.SANDBOX_VALUES:
+            problems.append(f"sandbox is {value!r}, expected on or off")
     for field in ("maintainer", "verification_command"):
         if isinstance(spec.get(field), str) and kit.SPEC_PLACEHOLDER in spec[field]:
             problems.append(f"{field} still holds the placeholder {kit.SPEC_PLACEHOLDER}")
@@ -265,7 +269,8 @@ def check_notice_digests(root: Path) -> tuple[bool, str]:
     text = notice.read_text(encoding="utf-8")
     recorded = _DIGEST_LINE.findall(text)
     skipped = _SKIPPED_LINE.findall(text)
-    if not recorded and not skipped:
+    modified = _MODIFIED_LINE.findall(text)
+    if not recorded and not skipped and not modified:
         return False, "kit notice lists no digests"
     problems = []
     for digest, relative in recorded:
@@ -274,7 +279,8 @@ def check_notice_digests(root: Path) -> tuple[bool, str]:
             problems.append(f"{relative} missing")
         elif sha256_file(path) != digest:
             problems.append(f"{relative} differs from the exported version")
-    summary = f"{len(recorded)} kit files match the notice" + (f"; {len(skipped)} target-owned files not digest-checked" if skipped else "")
+    summary = (f"{len(recorded)} kit files match the notice" + (f"; {len(skipped)} target-owned files not digest-checked" if skipped else "")
+               + (f"; {len(modified)} kit files modified by the target, not digest-checked" if modified else ""))
     return (not problems), ("; ".join(problems) if problems else summary)
 
 
