@@ -13,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import importlib.util
 import unittest
 from pathlib import Path
 
@@ -32,8 +33,17 @@ FAIL_VERIFY = f'{sys.executable} -c "print(\'{{\\"result\\": \\"FAIL\\"}}\')"'
 FAKE_GH = """#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_GH_LOG"
 case "$1 $2" in
-  "pr view") if [ -f "$FAKE_GH_LOG.exists" ]; then echo "https://example.invalid/pull/1"; exit 0; else exit 1; fi ;;
-  "pr create") if [ -f "$FAKE_GH_LOG.fail" ]; then echo "refused" >&2; exit 1; else echo "https://example.invalid/pull/2"; exit 0; fi ;;
+  "pr list") if [ -f "$FAKE_GH_LOG.listfail" ]; then echo "HTTP 403 graphql refused" >&2; exit 1; fi
+    case "$*" in *"--state open"*) open=1 ;; *) open=0 ;; esac
+    if [ -f "$FAKE_GH_LOG.merged" ] && [ "$open" = 0 ]; then echo "https://example.invalid/pull/0"; fi
+    if [ -f "$FAKE_GH_LOG.exists" ]; then echo "https://example.invalid/pull/1"; fi; exit 0 ;;
+  "pr create") if [ -f "$FAKE_GH_LOG.fail" ]; then echo "HTTP 403 graphql refused" >&2; exit 1; else echo "https://example.invalid/pull/2"; exit 0; fi ;;
+  "api "*) case "$*" in *"--method GET"*)
+      if [ -f "$FAKE_GH_LOG.getfail" ]; then echo "HTTP 403 refused" >&2; exit 1; fi
+      if [ -f "$FAKE_GH_LOG.exists" ]; then echo '[{"html_url": "https://example.invalid/pull/1"}]'; else echo '[]'; fi; exit 0 ;; esac
+    cat > "$FAKE_GH_LOG.stdin"
+    if [ -f "$FAKE_GH_LOG.apifail" ]; then echo "HTTP 422 rest refused" >&2; exit 1; fi
+    echo '{"number": 3, "html_url": "https://example.invalid/pull/3"}'; exit 0 ;;
   *) echo "unexpected gh call" >&2; exit 1 ;;
 esac
 """
@@ -114,7 +124,20 @@ class PushIncrementTest(unittest.TestCase):
         self.assertIn("--base main --head feat/thing", create[0])
         self.assertIn("feat(thing): add a note", create[0])
         self.assertFalse(any("merge" in call for call in self.gh_calls()))
+        lookup = [call for call in self.gh_calls() if call.startswith("pr list")]
+        self.assertTrue(lookup)
+        self.assertIn("--head feat/thing --state open", lookup[0])
         self.assertEqual(git(self.work, "status", "--porcelain"), "", "a run must leave the tree clean, bytecode included")
+
+    def test_a_merged_pull_request_with_the_same_branch_name_is_not_reused(self) -> None:
+        # The fake lists the merged pull/0 for any lookup that does not restrict itself to open reviews.
+        (self.log.parent / "gh.log.merged").write_text("", encoding="utf-8")
+        report = self.run_script()
+        self.assertEqual(report["result"], "PASS", report)
+        self.assertTrue(report["created"])
+        self.assertEqual(report["pull_request"], "https://example.invalid/pull/2")
+        self.assertEqual(len([call for call in self.gh_calls() if call.startswith("pr create")]), 1)
+        self.assertFalse(any(call.startswith("pr view") for call in self.gh_calls()))
 
     def test_second_run_reuses_the_existing_pull_request(self) -> None:
         self.run_script()
@@ -239,6 +262,94 @@ class PushIncrementTest(unittest.TestCase):
         self.assertEqual(report["result"], "FAIL")
         self.assertIn("attribution", report["refused"][0])
         self.assertEqual(len([call for call in self.gh_calls() if call.startswith("pr create")]), 1)
+
+    def use_github_shaped_origin(self) -> None:
+        """The configured URL names a GitHub repository; an insteadOf rewrite sends fetch and push to the bare one on disk."""
+        github = "git@github.com:acme/widget.git"
+        git(self.work, "remote", "set-url", "origin", github)
+        git(self.work, "config", f"url.{self.origin}.insteadOf", github)
+
+    def test_failed_create_falls_back_to_rest(self) -> None:
+        self.use_github_shaped_origin()
+        (self.log.parent / "gh.log.fail").write_text("", encoding="utf-8")
+        report = self.run_script()
+        self.assertEqual(report["result"], "PASS", report)
+        self.assertEqual(report["route"], "rest")
+        self.assertTrue(report["created"])
+        self.assertEqual(report["pull_request"], "https://example.invalid/pull/3")
+        self.assertIn("feat/thing", git(self.work, "ls-remote", "--heads", "origin"))
+        api = [call for call in self.gh_calls() if call.startswith("api ")]
+        self.assertEqual(api, ["api --method POST repos/acme/widget/pulls --input -"])
+        sent = json.loads((self.log.parent / "gh.log.stdin").read_text(encoding="utf-8"))
+        self.assertEqual((sent["head"], sent["base"], sent["title"]), ("feat/thing", "main", "feat(thing): add a note"))
+        self.assertIn("Commits:", sent["body"])
+        self.assertEqual(len([call for call in self.gh_calls() if call.startswith("pr list")]), 1, "no lookup after a REST create")
+
+    def test_both_routes_failing_names_both_failures(self) -> None:
+        self.use_github_shaped_origin()
+        for flag in ("gh.log.fail", "gh.log.apifail"):
+            (self.log.parent / flag).write_text("", encoding="utf-8")
+        report = self.run_script()
+        self.assertEqual(report["result"], "FAIL")
+        self.assertEqual(report["pushed_to"], "origin")
+        self.assertNotIn("route", report)
+        self.assertIn("pr create failed: HTTP 403 graphql refused", report["refused"][0])
+        self.assertIn("api (REST) failed: HTTP 422 rest refused", report["refused"][0])
+        self.assertIn("the branch is pushed", report["refused"][0])
+
+    def test_a_path_origin_skips_the_rest_fallback_with_a_clear_error(self) -> None:
+        (self.log.parent / "gh.log.fail").write_text("", encoding="utf-8")
+        report = self.run_script()
+        self.assertEqual(report["result"], "FAIL")
+        self.assertIn("REST fallback was skipped: origin names no GitHub owner and repository", report["refused"][0])
+        self.assertNotIn(str(self.origin), report["refused"][0], "the origin URL may carry a credential")
+        self.assertFalse(any(call.startswith("api ") for call in self.gh_calls()))
+
+    def test_blocked_list_finds_the_existing_pull_request_through_rest(self) -> None:
+        self.use_github_shaped_origin()
+        for flag in ("gh.log.listfail", "gh.log.exists"):
+            (self.log.parent / flag).write_text("", encoding="utf-8")
+        report = self.run_script()
+        self.assertEqual(report["result"], "PASS", report)
+        self.assertFalse(report["created"])
+        self.assertEqual(report["pull_request"], "https://example.invalid/pull/1")
+        self.assertNotIn("route", report)
+        self.assertIn("api --method GET repos/acme/widget/pulls?head=acme:feat/thing&state=open", self.gh_calls())
+        self.assertFalse(any(call.startswith("pr create") or "POST" in call for call in self.gh_calls()))
+
+    def test_fully_blocked_lookups_then_rest_creates(self) -> None:
+        self.use_github_shaped_origin()
+        for flag in ("gh.log.listfail", "gh.log.getfail", "gh.log.fail"):
+            (self.log.parent / flag).write_text("", encoding="utf-8")
+        report = self.run_script()
+        self.assertEqual(report["result"], "PASS", report)
+        self.assertTrue(report["created"])
+        self.assertEqual(report["route"], "rest")
+        self.assertEqual(report["pull_request"], "https://example.invalid/pull/3")
+        self.assertEqual(len([call for call in self.gh_calls() if "--method GET" in call]), 1)
+        self.assertEqual(len([call for call in self.gh_calls() if "--method POST" in call]), 1)
+
+    def test_normal_path_reports_route_cli(self) -> None:
+        report = self.run_script()
+        self.assertEqual(report["route"], "cli")
+        self.assertFalse(any(call.startswith("api ") for call in self.gh_calls()))
+
+    def test_github_url_parser_over_ssh_https_and_path_forms(self) -> None:
+        spec = importlib.util.spec_from_file_location("push_increment_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        sys.dont_write_bytecode, before = True, sys.dont_write_bytecode
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = before
+        parse = module.github_repository
+        self.assertEqual(parse("git@github.com:christiaslab/paes.git"), ("christiaslab", "paes"))
+        self.assertEqual(parse("https://github.com/christiaslab/paes.git"), ("christiaslab", "paes"))
+        self.assertEqual(parse("https://github.com/christiaslab/paes"), ("christiaslab", "paes"))
+        self.assertEqual(parse("https://github.com/owner/repo.name/"), ("owner", "repo.name"))
+        self.assertIsNone(parse(str(self.origin)))
+        self.assertIsNone(parse("/srv/git/paes.git"))
+        self.assertIsNone(parse("https://gitlab.com/owner/repo.git"))
 
     def test_core_makes_no_network_call_and_reads_no_token(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")

@@ -24,7 +24,18 @@ CI proposal when the target already has the workflow and lists it as skipped.
 Kit v12: ``install --upgrade`` over an installed kit overwrites a copy only when
 it still carries the digest the installed notice recorded for it, refuses a
 modified copy or a path through a symbolic link by name and rewrites the
-notice with the export's digests. Standard library only.
+notice with the export's digests. Kit v13: an upgrade refuses a destination with a symbolic link at any component
+below the target, wherever the link points; it appends a dated line to an `## Upgrades` section of the rewritten notice,
+carrying the earlier lines forward; and the notice names the routine that retires a merged increment branch.
+Kit v14: the specification gains two optional fields, ``sandbox`` (``on`` or ``off``, absent means off) and
+``bot_authors``; with ``sandbox: on`` the rendered settings carry a sandbox block and the report proposes
+``.worktrees/`` for the target's .gitignore. An upgrade marks a kit-written copy the target changed as ``modified``
+only when the maintainer names it with ``--own <path>``; without it the copy is refused and still fails the digest check,
+in the notice instead of recording a digest the file no longer has.
+Kit v17 (Decision 0025): ``digests`` writes ``adapters/kit-digests.txt`` at the origin, the manifest's
+``kit_version`` and one digest line per copy, read by the ``kit-copy-drift`` check of the repository verifier;
+the record stays at the origin and is not a manifest entry.
+Standard library only.
 """
 from __future__ import annotations
 
@@ -40,9 +51,10 @@ from pathlib import Path
 MANIFEST = "adapters/kit-manifest.yaml"
 NOTICE = "adapters/KIT_NOTICE.md"
 DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
+DIGESTS = "adapters/kit-digests.txt"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17")
 # An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
 UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
@@ -57,8 +69,18 @@ VERIFICATION_COMMAND = "python3 scripts/verify_kit.py"
 SPEC = "adapters/project-spec.yaml"
 SPEC_VERSION = "1"
 SPEC_FIELDS = ("spec_version", "project_name", "maintainer", "reviewer", "release_authority", "verification_command",
-               "handoff_pointer", "integration", "guidance_files", "limits")
-SPEC_LIST_FIELDS = ("guidance_files", "limits")
+               "handoff_pointer", "integration", "guidance_files", "limits", "sandbox", "bot_authors")
+SPEC_LIST_FIELDS = ("guidance_files", "limits", "bot_authors")
+# Kit v14: fields a specification written before version fourteen lacks; absent, sandbox is off and the bot list empty.
+SPEC_OPTIONAL_FIELDS = ("sandbox", "bot_authors")
+SANDBOX_VALUES = ("on", "off")
+# Kit v14 (trial 9, linetally): the session sandbox writes only inside the checkout, so a worktree lives at
+# .worktrees/<slug>; gh fails TLS under the sandbox and is excluded; git push needs the forge's domain.
+WORKTREES_IGNORE = ".worktrees/"
+# kit v15 (review of kit v14): the exclusion matches the Bash call text only, exact without a trailing ` *`;
+# api.github.com needs the wildcard.
+SANDBOX_DOMAINS = {"github": ["github.com", "*.github.com"]}
+PUSH_COMMAND = "python3 scripts/push_increment.py *"
 SPEC_PLACEHOLDER = "(fill in)"
 NO_HANDOFF = "none"
 # What a maintainer pastes into the first session after install (kit v5, finding 5 of the third chargewatch-gr trial).
@@ -101,6 +123,21 @@ CI_TEMPLATES = {"github": "adapters/kit-templates/ci/github-verify.yml.template"
 PUSH_SCRIPT = "push script"
 _VERSION = re.compile(r"^kit_version: (\d+)$", re.MULTILINE)
 _DIGEST_LINE = re.compile(r"^([0-9a-f]{64})  (\S+)$", re.MULTILINE)
+# Kit v14: a copy the kit wrote and the target changed since; not digest-checked, kept until it is back at a kit digest.
+MODIFIED = "modified"
+MODIFIED_NOTE = "(written by the kit, changed by the target, not digest-checked)"
+_MODIFIED_LINE = re.compile(r"^modified  (\S+)  ", re.MULTILINE)
+# Kit v13: the upgrade record in the target's notice, one dated line per upgrade, inserted before the licence section.
+UPGRADES_HEADING = "## Upgrades"
+LICENCE_HEADING = "## Licence"
+# Kit v13: the push script creates an increment branch in the target and no kit step removed it after the merge.
+RETIREMENT = (
+    "The push script, scripts/push_increment.py, creates an increment branch in this repository and opens its pull "
+    "request; it never merges and never deletes. After the maintainer merges, and only once the forge shows the merge "
+    "(`git ls-remote --heads origin` no longer lists the branch), retire it from the primary checkout, in order, as "
+    "policies/worktree-flow.md rule 6 says: `git fetch --prune origin`, `git merge --ff-only origin/main`, "
+    "`git worktree remove <worktree>` when a worktree holds the branch, then `git branch -D <branch>`."
+)
 
 
 class Entry:
@@ -198,6 +235,48 @@ def read_spec(target: Path) -> dict[str, object] | None:
         return None
 
 
+def sandbox_on(spec: dict[str, object] | None) -> bool:
+    """kit v14: the specification turns the sandbox on only with `sandbox: on`; absent or anything else is off here."""
+    return bool(spec) and spec.get("sandbox") == "on"
+
+
+def sandbox_block(spec: dict[str, object] | None) -> dict[str, object]:
+    """kit v15: the settings sandbox block; the push script's own command line is excluded beside gh, since the exclusion
+    matches the text of the Bash call only; the allowed domains follow the review backend, none without a push script."""
+    return {"enabled": True, "excludedCommands": ["gh *", PUSH_COMMAND],
+            "network": {"allowedDomains": list(SANDBOX_DOMAINS.get(integration_backend(spec) or "", []))}}
+
+
+def with_sandbox(settings_text: str, spec: dict[str, object] | None) -> str:
+    """kit v14: the rendered settings with the sandbox block added after `permissions` when the specification turns it
+    on; the text unchanged otherwise, so a target with the sandbox off or absent gets the same bytes as before."""
+    if not sandbox_on(spec):
+        return settings_text
+    settings = json.loads(settings_text)
+    result: dict[str, object] = {}
+    for key, value in settings.items():
+        result[key] = value
+        if key == "permissions":
+            result["sandbox"] = sandbox_block(spec)
+    result.setdefault("sandbox", sandbox_block(spec))
+    return json.dumps(result, indent=2) + "\n"
+
+
+def worktrees_ignore_proposal(target: Path, spec: dict[str, object] | None) -> str | None:
+    """kit v14: with the sandbox on, the worktree lives at .worktrees/<slug> inside the checkout, which git must ignore."""
+    if not sandbox_on(spec):
+        return None
+    path = target / ".gitignore"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []
+    except OSError:
+        lines = []
+    if any(line.strip() in (WORKTREES_IGNORE, "/" + WORKTREES_IGNORE, ".worktrees", "/.worktrees") for line in lines):
+        return None
+    return (f".gitignore: the specification turns the sandbox on, so a worktree lives at {WORKTREES_IGNORE}<slug> inside "
+            f"the checkout (policies/worktree-flow.md rule 3); add the line `{WORKTREES_IGNORE}`")
+
+
 def proposal_summary(items: list[str]) -> str:
     """One line for the report when the merge is already written as a file (finding 1 of the second trial).
     The no-bypass value is a replacement or a setting, not an addition, and is named on its own line (kit v5)."""
@@ -257,7 +336,7 @@ def notice_text(root: Path, entries: list[Entry], commit: str) -> str:
         "",
         LICENCE_SCOPE,
         "",
-        "Files below marked with a digest are byte-identical copies of the origin; templates are filled at install time and are not digest-checked; a line marked `skipped` names a file the target already had, which the installer left alone and does not digest-check.",
+        "Files below marked with a digest are byte-identical copies of the origin; templates are filled at install time and are not digest-checked; a line marked `skipped` names a file the target already had, which the installer left alone and does not digest-check; a line marked `modified` names a copy the kit wrote and the target changed since, which the maintainer took as the target's own with `install --upgrade --own <path>` and which is not digest-checked until it is back at a kit digest.",
         "",
         "## Digests",
         "",
@@ -269,21 +348,93 @@ def notice_text(root: Path, entries: list[Entry], commit: str) -> str:
             lines.append(f"optional  {entry.target}  (written only when the installer is asked)")
         else:
             lines.append(f"template  {entry.target}")
-    lines += ["", "## Licence", "", MIT_TEXT]
+    lines += ["", "## Retiring an increment branch", "", RETIREMENT, "", LICENCE_HEADING, "", MIT_TEXT]
     return "\n".join(lines) + "\n"
 
 
+def manifest_version(root: Path) -> str:
+    """The manifest's kit_version, validated by load_manifest."""
+    load_manifest(root)
+    return _VERSION.search((root / MANIFEST).read_text(encoding="utf-8")).group(1)
+
+
+def digests_text(root: Path) -> str:
+    """Kit v17 (Decision 0025 point 1): the manifest's kit_version on line one, then one digest line per copy entry,
+    in the installed notice's line format, so parse_notice reads both."""
+    lines = [f"kit_version: {manifest_version(root)}"]
+    lines += [f"{sha256_file(root / entry.source)}  {entry.target}" for entry in load_manifest(root) if entry.role == "copy"]
+    return "\n".join(lines) + "\n"
+
+
+def write_digests(root: Path) -> dict[str, object]:
+    """Decision 0025 point 2: the only writer of the digest record; point 4: refused outside the origin, so a target that
+    runs the kit copy of this script gets no second derived file."""
+    if not re.search(r"^origin: paes$", (root / MANIFEST).read_text(encoding="utf-8"), re.MULTILINE):
+        raise ValueError(f"{DIGESTS} is written only at the origin")
+    text = digests_text(root)
+    (root / DIGESTS).write_text(text, encoding="utf-8")
+    return {"result": "PASS", "written": DIGESTS, "kit_version": _VERSION.search(text).group(1),
+            "copies": len(_DIGEST_LINE.findall(text))}
+
+
+def copy_drift(root: Path) -> list[str]:
+    """Decision 0025 point 3: the record's version against the manifest's, and every copy's digest in the working tree
+    against the recorded one. Returns only paths and versions: the record's path when it is missing, a version line when the two
+    versions differ, then each copy path whose digest differs or is missing on either side. Empty means no drift."""
+    record = root / DIGESTS
+    manifest = manifest_version(root)
+    if not record.is_file():
+        return [DIGESTS]
+    text = record.read_text(encoding="utf-8")
+    recorded_version = _VERSION.search(text)
+    findings = []
+    if recorded_version is None or recorded_version.group(1) != manifest:
+        findings.append(f"kit_version {recorded_version.group(1) if recorded_version else 'none'} recorded, {manifest} in manifest")
+    recorded = {path: digest for digest, path in _DIGEST_LINE.findall(text)}
+    current = {entry.target: sha256_file(root / entry.source) for entry in load_manifest(root) if entry.role == "copy"}
+    findings += sorted(path for path in set(recorded) | set(current) if recorded.get(path) != current.get(path))
+    return findings
+
+
 def parse_notice(text: str) -> dict[str, str]:
-    return {path: digest for digest, path in _DIGEST_LINE.findall(text)}
+    """Path to recorded digest; kit v14: a `modified` line maps its path to MODIFIED instead of a digest."""
+    recorded = {path: digest for digest, path in _DIGEST_LINE.findall(text)}
+    recorded.update((path, MODIFIED) for path in _MODIFIED_LINE.findall(text))
+    return recorded
 
 
-def installed_notice(notice: str, skipped_targets: set[str]) -> str:
-    """The notice written into a target: a digest only for files this install wrote."""
+def upgrade_lines(notice: str) -> list[str]:
+    """kit v13: the dated lines of a notice's upgrade section, in order; none when it has no such section."""
+    lines, inside = [], False
+    for line in notice.splitlines():
+        if line.startswith("## "):
+            inside = line == UPGRADES_HEADING
+        elif inside and line.startswith("- "):
+            lines.append(line)
+    return lines
+
+
+def with_upgrade_record(notice: str, lines: list[str]) -> str:
+    """kit v13: the notice with an upgrade section before the licence section. The lines start with `- `, so neither the
+    digest parser nor verify_kit.py reads them as a digest or a `skipped` line."""
+    section = "\n".join([UPGRADES_HEADING, "", *lines, "", ""])
+    marker = "\n" + LICENCE_HEADING + "\n"
+    if marker not in notice:
+        return notice.rstrip("\n") + "\n\n" + section
+    head, tail = notice.split(marker, 1)
+    return head + "\n" + section + LICENCE_HEADING + "\n" + tail
+
+
+def installed_notice(notice: str, skipped_targets: set[str], modified_targets: set[str] = frozenset()) -> str:
+    """The notice written into a target: a digest only for files this install wrote; kit v14: a `modified` line for a
+    kit-written copy the target changed, which an upgrade refused."""
     lines = []
     for line in notice.splitlines():
         match = _DIGEST_LINE.match(line)
         if match and match.group(2) in skipped_targets:
             lines.append(f"skipped  {match.group(2)}  (the target's own file, not written by the kit)")
+        elif match and match.group(2) in modified_targets:
+            lines.append(f"{MODIFIED}  {match.group(2)}  {MODIFIED_NOTE}")
         else:
             lines.append(line)
     return "\n".join(lines) + "\n"
@@ -330,7 +481,32 @@ def settings_proposal(kit_settings: dict, target_settings: dict) -> list[str]:
     for event in kit_settings.get("hooks", {}):
         if event not in target_settings.get("hooks", {}):
             proposals.append(f"add the `{event}` hook entry")
+    # kit v15 (review lane): a v14 target already carrying a sandbox block is told which list entries it lacks.
+    if "sandbox" in kit_settings and isinstance(target_settings.get("sandbox"), dict):
+        for path, wanted in sandbox_lists(kit_settings):
+            present = sandbox_list(target_settings, path)
+            if present is None:
+                proposals.append(f"sandbox.{path} is not a list; compare it with the kit's by hand")
+            else:
+                proposals.extend(f"add `{item}` to sandbox.{path}" for item in wanted if item not in present)
     return proposals
+
+
+def sandbox_lists(settings: dict) -> list[tuple[str, list[str]]]:
+    """The two list paths of a sandbox block with their entries, empty when the block or a list is absent."""
+    return [(path, sandbox_list(settings, path) or []) for path in ("excludedCommands", "network.allowedDomains")]
+
+
+def sandbox_list(settings: dict, path: str) -> list[str] | None:
+    """The list at a sandbox path; [] when absent, None when present but not a list, which is left to the maintainer."""
+    value: object = settings.get("sandbox", {})
+    for key in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        if key not in value:
+            return []
+        value = value[key]
+    return list(value) if isinstance(value, list) else None
 
 
 def merge_settings(kit_settings: dict, target_settings: dict) -> dict:
@@ -357,13 +533,35 @@ def merge_settings(kit_settings: dict, target_settings: dict) -> dict:
         for event, entries in kit_settings["hooks"].items():
             if event not in merged["hooks"]:
                 merged["hooks"][event] = entries
+    if "sandbox" in kit_settings and isinstance(merged.get("sandbox"), dict):
+        for path, wanted in sandbox_lists(kit_settings):
+            present = sandbox_list(merged, path)
+            missing = [] if present is None else [item for item in wanted if item not in present]
+            if missing:
+                node = merged["sandbox"]
+                for key in path.split(".")[:-1]:
+                    if not isinstance(node.get(key), dict):
+                        node[key] = {}
+                    node = node[key]
+                node[path.split(".")[-1]] = present + missing
     return merged
 
 
 def inside_target(destination: Path, target: Path) -> bool:
     """kit v12: a destination the upgrade may overwrite is no link, resolves inside the resolved target and, when it
-    exists, is a regular file (review lane, fourth finding: a copy replaced by a directory would abort the run)."""
-    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+    exists, is a regular file (review lane, fourth finding: a copy replaced by a directory would abort the run).
+    kit v13, the review lane's fifth finding on v12: no component of the path below the target is a symbolic link, even
+    one that resolves inside the target, so a linked directory never routes a write into a nested checkout."""
+    try:
+        parts = destination.relative_to(target).parts
+    except ValueError:
+        return False
+    current = target
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            return False
+    if destination.exists() and not destination.is_file():
         return False
     try:
         return destination.resolve().is_relative_to(target.resolve())
@@ -372,7 +570,7 @@ def inside_target(destination: Path, target: Path) -> bool:
 
 
 def install(source: Path, target: Path, project_name: str, report_path: Path | None, ci: bool = False,
-            upgrade: bool = False) -> dict[str, object]:
+            upgrade: bool = False, take_as_own: tuple[str, ...] = ()) -> dict[str, object]:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", project_name):
         raise ValueError("project name must be 1 to 64 characters of letters, digits, space, dot, underscore or hyphen")
     entries = load_manifest(source)
@@ -383,8 +581,10 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
             raise FileNotFoundError("no installed kit notice in the target; run install without --upgrade")
         if not inside_target(target / NOTICE, target):
             # kit v12, review lane: the notice is rewritten on upgrade, so a link there would rewrite another install's
-            raise FileNotFoundError(f"{NOTICE} is a symbolic link or resolves outside the target; not followed")
-        installed = parse_notice((target / NOTICE).read_text(encoding="utf-8"))
+            raise FileNotFoundError(f"{NOTICE} is or lies under a symbolic link, or resolves outside the target; not followed")
+        previous_notice = (target / NOTICE).read_text(encoding="utf-8")
+        installed = parse_notice(previous_notice)
+        previous_version = _VERSION.search((target / MANIFEST).read_text(encoding="utf-8")) if (target / MANIFEST).is_file() else None
     if report_path is not None:
         # kit v11, finding 3 of the sixth chargewatch-gr trial: the refusal comes before the first write; a report path
         # that names a file the install itself writes is refused here too, since it would be overwritten by the report
@@ -416,6 +616,8 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
     written: list[tuple[str, str]] = []
     skipped: list[tuple[str, str]] = []
     own: set[str] = set()  # kit v12: copies the target already had, marked `skipped` in the notice
+    changed: set[str] = set()  # kit v14: kit-written copies the target changed, marked `modified` in the notice
+    owned: list[str] = []  # kit v14: paths this upgrade marked `modified` because the maintainer named them with --own
     backend = integration_backend(spec)
     ci_template = CI_TEMPLATES.get(backend) if backend else None
     for entry in entries:
@@ -427,12 +629,14 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
                 proposals.append(f"{entry.target}: a CI workflow for the `{backend}` backend can be written from the kit; rerun the installer with --ci to write it")
                 continue
         if upgrade and entry.role == "copy" and not inside_target(destination, target):
-            # kit v12, review lane: a copy replaced by a symbolic link, or under a linked directory that leaves the target,
-            # is never followed, so an upgrade of one target cannot write into another; refused by name, dangling or not
+            # kit v12, review lane: a copy replaced by a symbolic link, or under a linked directory, is never followed, so an
+            # upgrade of one target cannot write into another or into a nested checkout (kit v13); refused by name
             skipped.append((entry.target, "a symbolic link, a directory or outside the target; not overwritten"))
             if entry.target not in installed:
                 own.add(entry.target)  # review lane, third finding: a target-owned link keeps its `skipped` line in the notice
-            proposals.append(f"{entry.target}: a symbolic link, a directory or a path that resolves outside the target, not followed and not "
+            elif installed[entry.target] == MODIFIED:
+                changed.add(entry.target)  # kit v14: a `modified` copy keeps its marker while it is refused
+            proposals.append(f"{entry.target}: a symbolic link, a path through a linked directory, a directory or a path that resolves outside the target, not followed and not "
                              f"overwritten; replace it with {entry.source} from the export by hand if the kit's copy is wanted there")
             continue
         if upgrade and entry.role == "copy" and destination.exists() and entry.target in installed:
@@ -443,9 +647,18 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
                 continue
             if current != installed[entry.target]:
                 skipped.append((entry.target, "modified in the target; not overwritten"))
-                proposals.append(f"{entry.target}: modified in the target since the kit installed it and not overwritten; compare it "
-                                 f"with {entry.source} in the export by hand; the notice now records the export's digest, so "
-                                 f"{VERIFICATION_COMMAND} reports it as differing until it is reconciled")
+                if installed[entry.target] == MODIFIED or entry.target in take_as_own:
+                    # kit v14: the marker is the maintainer's act (`--own`), kept by later upgrades until the bytes return
+                    changed.add(entry.target)
+                    if installed[entry.target] != MODIFIED:
+                        owned.append(entry.target)
+                    proposals.append(f"{entry.target}: modified in the target and taken as the target's own; the notice marks it "
+                                     f"`{MODIFIED}`, not digest-checked until it is back at the export's bytes")
+                else:
+                    proposals.append(f"{entry.target}: modified in the target since the kit installed it and not overwritten; compare it "
+                                     f"with {entry.source} in the export by hand; the notice now records the export's digest, so "
+                                     f"{VERIFICATION_COMMAND} reports it as differing until it is reconciled, or rerun the upgrade "
+                                     f"with --own {entry.target} to keep the change as the target's own")
                 continue
         elif destination.exists():
             skipped.append((entry.target, "exists in the target; not overwritten"))
@@ -453,7 +666,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
                 own.add(entry.target)
             if entry.target == SETTINGS:
                 try:
-                    kit_settings = json.loads(render((source / entry.source).read_text(encoding="utf-8"), fields))
+                    kit_settings = json.loads(with_sandbox(render((source / entry.source).read_text(encoding="utf-8"), fields), spec))
                     target_settings = json.loads(destination.read_text(encoding="utf-8"))
                     items = settings_proposal(kit_settings, target_settings)
                 except (json.JSONDecodeError, OSError, ValueError):
@@ -484,7 +697,8 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         if entry.role == "copy":
             shutil.copyfile(source / entry.source, destination)
         else:
-            destination.write_text(render((source / entry.source).read_text(encoding="utf-8"), fields), encoding="utf-8")
+            text = render((source / entry.source).read_text(encoding="utf-8"), fields)
+            destination.write_text(with_sandbox(text, spec) if entry.target == SETTINGS else text, encoding="utf-8")
         written.append((entry.target, sha256_file(destination)))
     if ci and ci_template is None:
         if backend is None:
@@ -493,6 +707,13 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
             proposals.append("--ci: the `none` backend has no review tool and no CI template; the maintainer's own CI, if any, runs the verification command")
         else:
             proposals.append(f"--ci: no CI template exists for the `{backend}` backend; a template joins the kit once a target on that host has tried it (Decision 0017 point 4)")
+    for path in take_as_own:
+        if path not in owned:
+            # kit v14: --own acts only on a kit-written copy the target changed, during an upgrade
+            proposals.append(f"--own {path}: not a kit-written copy changed by the target in this upgrade; ignored")
+    worktrees = worktrees_ignore_proposal(target, spec)
+    if worktrees is not None:
+        proposals.append(worktrees)
     ruff = ruff_exclude_proposal(target, entries)
     if ruff is not None:
         proposals.append(ruff)
@@ -510,7 +731,18 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         # kit v12: on upgrade only the target's own copies stay `skipped`; a refused modified copy gets the export's digest
         target_notice.parent.mkdir(parents=True, exist_ok=True)
         marked = own if upgrade else {path for path, _ in skipped}
-        target_notice.write_text(installed_notice(notice, marked), encoding="utf-8")
+        text = installed_notice(notice, marked, changed)
+        if upgrade:
+            # kit v13: the upgrade leaves a record in the target beside its commit, the earlier lines carried forward
+            refused = [path for path, reason in skipped if reason.startswith(("modified", "a symbolic link"))]
+            old_commit = re.search(r"^origin_commit: (\S+)$", previous_notice, re.MULTILINE)
+            new_version = _VERSION.search((source / MANIFEST).read_text(encoding="utf-8"))
+            line = (f"- {_dt.date.today().isoformat()}: from origin commit {old_commit.group(1)[:12] if old_commit else 'unknown'}"
+                    f" (kit version {previous_version.group(1) if previous_version else 'unknown'}) to {commit[:12]}"
+                    f" (kit version {new_version.group(1)}); files written: {len(written)}; owned: {', '.join(owned) or 'none'};"
+                    f" refused: {', '.join(refused) or 'none'}")
+            text = with_upgrade_record(text, upgrade_lines(previous_notice) + [line])
+        target_notice.write_text(text, encoding="utf-8")
         written.append((NOTICE, sha256_file(target_notice)))
     checklist = [
         f"review the merge proposals above, if any; a written {PROPOSED_SETTINGS} is the settings merge ready to adopt or discard",
@@ -521,6 +753,7 @@ def install(source: Path, target: Path, project_name: str, report_path: Path | N
         f"choose the integration path in {SPEC}: `{PUSH_SCRIPT}: github`, `{PUSH_SCRIPT}: none` or `maintainer pushes`; scripts/push_increment.py runs only under the first two and never merges",
         f"then test the kit in a session opened in this checkout: look for the session banner, then paste: {FIRST_SESSION_PROMPT}",
         f"to upgrade later, run the kit.py of the newer export (`python3 <export>/scripts/kit.py install ...`): {UPGRADE_NOTE}",
+        f"after each merged pull request, retire its branch as {NOTICE} says under `Retiring an increment branch`",
     ]
     report = {
         "result": "PASS",
@@ -572,6 +805,8 @@ def main(argv: list[str] | None = None) -> int:
     exp = sub.add_parser("export", help="copy the kit to a directory with a notice and digests")
     exp.add_argument("--root", type=Path, default=Path.cwd())
     exp.add_argument("--out", type=Path, required=True)
+    dig = sub.add_parser("digests", help=f"rewrite {DIGESTS} from the manifest and the copies in the working tree (kit v17, Decision 0025); the only writer; origin only")
+    dig.add_argument("--root", type=Path, default=Path.cwd())
     ins = sub.add_parser("install", help="write the kit into a target, only where files are missing; with --upgrade, "
                          "also replace kit copies still at the installed notice's digest")
     ins.add_argument("--from", dest="source", type=Path, default=Path.cwd(), help="an export directory or the PAES root")
@@ -581,15 +816,22 @@ def main(argv: list[str] | None = None) -> int:
     ins.add_argument("--no-report", action="store_true")
     ins.add_argument("--ci", action="store_true", help="also write the CI workflow template of the specification's review backend, when one exists")
     ins.add_argument("--upgrade", action="store_true", help="over an installed kit: overwrite a copy only when it still carries the "
-                     "installed notice's digest, refuse a modified one by name, rewrite the notice (kit v12)")
+                     "installed notice's digest, refuse a modified one by name, rewrite the notice (kit v12) with a dated upgrade line (kit v13)")
+    ins.add_argument("--own", action="append", default=[], metavar="TARGET_PATH",
+                     help="with --upgrade, repeatable: take a kit-written copy the target changed as the target's own, so the notice marks "
+                     "it `modified` and the kit check stops digest-checking it until it is back at the export's bytes (kit v14); without "
+                     "it a modified copy is refused by name and keeps failing the digest check")
     args = parser.parse_args(argv)
     try:
         if args.command == "export":
             result = export(args.root.resolve(), args.out.resolve())
+        elif args.command == "digests":
+            result = write_digests(args.root.resolve())
         else:
             target = args.target.resolve()
             report_path = None if args.no_report else (args.report.resolve() if args.report else target / DEFAULT_REPORT)
-            result = install(args.source.resolve(), target, args.project_name, report_path, ci=args.ci, upgrade=args.upgrade)
+            result = install(args.source.resolve(), target, args.project_name, report_path, ci=args.ci, upgrade=args.upgrade,
+                             take_as_own=tuple(args.own))
     except (ValueError, FileNotFoundError, FileExistsError, OSError) as error:
         print(json.dumps({"result": "FAIL", "error": str(error)}, indent=2))
         return 1

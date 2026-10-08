@@ -52,7 +52,35 @@
 # one that is a symbolic link, a directory or a path that resolves outside the target, by name with a proposal; templates, the settings file and AGENTS.md keep install behaviour; the notice is rewritten with the
 # export's digests, the target's own files staying `skipped`; a target without a notice is refused before any write. The
 # bump also folds in the digest drift of scripts/test_hooks.py under version eleven. No entry changes.
-kit_version: 12
+# Version 13 (2026-10-06, the review lane's fifth finding on version twelve and the eighth chargewatch-gr trial's open items,
+# ruled by the owner): the link check is per component: an upgrade refuses a copy, and the notice, when any component of
+# its path below the target is a symbolic link, wherever the link points, so a linked directory that stays inside the target
+# no longer routes a write into a nested checkout; an upgrade appends one dated line, from the old origin commit and kit
+# version to the new, files written and copies refused, to an `## Upgrades` section of the rewritten notice before the
+# licence, the earlier lines carried forward, so the target keeps a record beside the commit while the first install's
+# report stays refused; the notice and the checklist name the rule 6 routine that retires a merged increment branch the
+# push script created. The version-bump guard is left for a decision. No entry changes.
+# Version 14 (2026-10-07, the trial-9 sandbox gaps on linetally and the chargewatch-gr Dependabot hand-off, ruled by the owner
+# that day; three lanes): the hygiene lane exempts a bot's Signed-off-by only for an author email listed under `bot_authors`
+# in the specification and documents squash merges in the contribution policy without a code exemption; the push lane gives
+# the push script a REST fallback through `gh api`, never GraphQL, and names the route in its report; the sandbox lane adds
+# the optional specification fields `sandbox` (`on` or `off`, absent means off) and `bot_authors`, renders a sandbox block
+# into a new settings file under `sandbox: on` (gh excluded, the review backend's domain allowed) with a proposal for
+# `.worktrees/` in the target's .gitignore, marks a kit-written copy the target changed as `modified` in the notice, not
+# digest-checked, only when the maintainer names it with `install --upgrade --own <path>` (otherwise refused and failing as in
+# version twelve; the upgrade line lists the owned paths), gives worktree-flow rule 3 the same-checkout `.worktrees/<slug>` variant and has the
+# conform review record a rule whose source file the target lacks as not applicable. No entry changes.
+# Version 15 (2026-10-07, the Codex review of kit v14, christiaslab/paes#77, ruled by the owner that day): the sandbox block
+# names the push-script command `python3 scripts/push_increment.py *` in `excludedCommands` beside `gh *`, since the
+# exclusion matches the text of the Bash call only (exact without the trailing ` *`) and the script launches gh, and allows `*.github.com` beside `github.com`
+# for the github backend so the REST fallback reaches api.github.com. No entry changes.
+# Version 16 (2026-10-07, the conform tension left open by the context guard increment, christiaslab/paes#85): the kit
+# copy of scripts/test_hooks.py carries the context guard's test class, skipped in a target where the script is absent
+# (Decision 0024, PAES-only), so an upgrade rewrites the v15 copy and the notice records the new digest. No entry changes.
+# Version 17 (2026-10-07, Decision 0025, christiaslab/paes#98 brief): scripts/kit.py gains the `digests` subcommand that writes
+# adapters/kit-digests.txt at the origin, the kit_version and one digest per copy, read by the verifier's kit-copy-drift check;
+# the record is not an entry and does not travel with the kit. No entry changes.
+kit_version: 17
 origin: paes
 entries:
   - role: copy

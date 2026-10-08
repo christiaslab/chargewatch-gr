@@ -203,3 +203,8 @@ because the rule is history hygiene, not access control. `scripts/commit_hygiene
 
 *Reverses if:* Dependabot allows the sign-off to be disabled, or the kit gains its own
 bot exemption — then return both files to the kit's copies.
+
+*Reversed 2026-10-08:* the kit gained its own bot exemption in version 14 (`bot_authors` in
+`adapters/project-spec.yaml`). With the upgrade to kit version 17 both files returned to the
+kit's copies and Dependabot's author email is listed under `bot_authors`; the behaviour is the
+same, now digest-checked by the kit.

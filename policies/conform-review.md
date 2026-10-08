@@ -1,6 +1,6 @@
 # Conform-review policy
 
-Status: added 2026-09-24 under Decision 0008 point 7 (increment 2); documented guidance, performed by a human or a model reader; not a pilot skill, so `pilot-manifest.yaml` and the `three-skill-taxonomy` check are unchanged
+Status: added 2026-09-24 under Decision 0008 point 7 (increment 2); documented guidance, performed by a human or a model reader; not a pilot skill, so `pilot-manifest.yaml` and the `three-skill-taxonomy` check are unchanged; section 3 gained the not-applicable line for a repository without a rule's source file on 2026-10-07 (brief `tasks/kit-v14-sandbox-spec-and-bots.json`)
 
 Provenance: reimplemented from the documented behaviour of the agent-skills conform-review doctrine at `adb5af6`; no text was copied. The rule shapes in section 4 were already named by PAES in `docs/DESIGN_PRINCIPLES.md`; this policy gives them stable identifiers and a review procedure.
 
@@ -34,7 +34,7 @@ A conform review reads a diff against the written rules of this repository and r
 | B1 | `policies/privacy-and-boundaries.md` | synthetic, repository-local inputs; no enterprise data, credentials or external services |
 | T1 | `contracts/task-contract.yaml` | writes stay inside the brief's owned paths |
 
-A later rules file is added to this table with the next free prefix; identifiers are never renumbered.
+A later rules file is added to this table with the next free prefix; identifiers are never renumbered. In a repository that lacks a rule's source file, as a target of the portable kit lacks `docs/DESIGN_PRINCIPLES.md`, `policies/release-gates.md` and `policies/privacy-and-boundaries.md`, the reviewer records that rule as not applicable by its id and never invents its text.
 
 ## 4. Named rule shapes
 
