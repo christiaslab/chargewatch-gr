@@ -33,4 +33,4 @@ The `model-neutral-core` check scans `contracts/`, `agents/`, `skills/`, `workfl
 
 ## Guidance, not checked
 
-Subject lines follow the existing `type(scope): subject` shape, with the scope optional. Whether a closed type set or subject-shape check is adopted is a later decision; it is not enforced now.
+Subject lines follow the existing `type(scope): subject` shape, with the scope optional. A subject is at most 72 characters and the summary of what changed goes in the body, since `scripts/push_increment.py` takes the subject as the pull-request title (owner ruling 2026-10-10, fifty-first session); this is documented guidance, not enforced. Whether a closed type set or subject-shape check is adopted is a later decision; it is not enforced now.

@@ -39,12 +39,13 @@ Kit v18 (the three kit findings of the forty-sixth session): ``install`` refuses
 as the target, since ``--from`` defaults to the current directory; an upgrade records the export's digest for a
 target-owned copy whose bytes equal the export's, so the kit check covers it from then on instead of leaving it
 ``skipped``; and the report warns when a kit test copy (``scripts/test_<name>.py``) tests a module the target owns
-or changed, since ``verify_kit.py`` runs no test module.
+or changed; from kit v21 ``verify_kit.py`` runs those copies (Decision 0026), so the warning foretells its check.
 Kit v19 (the two upgrade findings of the forty-ninth session): ``--project-name`` is optional; under ``--upgrade`` an
 absent name is read from the target's ``adapters/project-spec.yaml``, and the installer refuses by name when neither the
 flag nor the specification gives one, or when the flag is absent without ``--upgrade``. The default report of an upgrade
 is ``adapters/KIT_UPGRADE_REPORT_<date>_V<version>.md``, dated today with the export's manifest version, so a second
 upgrade on the same day at a newer version needs no ``--report``; the install default and the never-overwritten rule stay.
+Kit v21 (Decision 0026): ``verify_kit.py`` gains a ninth check, ``kit-tests``, that runs the kit test copies.
 Standard library only.
 """
 from __future__ import annotations
@@ -65,7 +66,7 @@ UPGRADE_REPORT = "adapters/KIT_UPGRADE_REPORT_{date}_V{version}.md"  # kit v19: 
 DIGESTS = "adapters/kit-digests.txt"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22")
 # An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
 UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
