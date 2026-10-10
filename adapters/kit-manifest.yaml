@@ -90,7 +90,17 @@
 # or when the flag is absent without `--upgrade`; the default report of an upgrade is adapters/KIT_UPGRADE_REPORT_<date>_V<version>.md,
 # dated today with the export's kit version, so a second upgrade on the same day at a newer version needs no `--report`; the install
 # default and the never-overwritten rule stay. No entry changes.
-kit_version: 19
+# Version 20 (2026-10-10, the subject-length guidance of the fifty-first session): policies/contribution.md, a copy entry, gains
+# the owner's ruling that a commit subject is at most 72 characters with the summary in the body, since the push script takes
+# the subject as the pull-request title; documented guidance, not enforced. No code changes. No entry changes.
+# Version 21 (2026-10-10, Decision 0026): scripts/verify_kit.py gains a ninth check, `kit-tests`, that runs the kit test
+# copies this manifest names and the target has, `scripts/test_<name>.py` not marked `skipped` in the notice, in one
+# `python3 -m unittest` call, and reports the count and the result; `--skip-kit-tests` reports it as not run, for a caller
+# that runs the modules itself, and kit-project-spec refuses the flag in the declared verification command. No entry changes.
+# Version 22 (2026-10-10, Decision 0027): the kit copy of scripts/test_hooks.py asserts the context guard's new thresholds,
+# 300,000 and 400,000 for the 1,000,000-token window, and that the old figures no longer warn; the guard itself stays
+# PAES-only and skipped in a target. No code changes in the kit. No entry changes.
+kit_version: 22
 origin: paes
 entries:
   - role: copy

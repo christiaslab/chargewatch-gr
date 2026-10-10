@@ -6,7 +6,8 @@ setting, hook wiring, the project specification and its verification command
 (Decision 0014), the shape of every skill (Decision 0017 point 5), the
 commit-history rule over HEAD, the staged-content rules
 over the index, task briefs under tasks/, and the kit digests recorded in
-adapters/KIT_NOTICE.md. Prints one JSON document; exit 0 on PASS, 1 on FAIL.
+adapters/KIT_NOTICE.md; and, Decision 0026, runs the kit test modules the manifest
+copies into this checkout. Prints one JSON document; exit 0 on PASS, 1 on FAIL.
 Standard library only; imports the kit's own modules from scripts/.
 """
 from __future__ import annotations
@@ -15,6 +16,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,6 +44,12 @@ _FRONT_MATTER = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 _POINTER = re.compile(r"^- (Doctrine|Script): `([^`]+)`$", re.MULTILINE)
 _HOW_TO_RUN = re.compile(r"^## How to run\n\n```[a-z]*\n(.*?)\n```", re.MULTILINE | re.DOTALL)
 _MUST_PRINT = re.compile(r"must print", re.IGNORECASE)
+# Decision 0026: a kit test copy, the one shape kit.test_pairs reads; run with python3 -m unittest, never the target's own tests.
+_KIT_TEST = re.compile(r"scripts/test_[a-z0-9_]+\.py")
+_RAN = re.compile(r"^Ran (\d+) tests?", re.MULTILINE)
+_FAILED_TEST = re.compile(r"^(?:FAIL|ERROR): (\S+)", re.MULTILINE)
+SKIP_KIT_TESTS = "--skip-kit-tests"
+KIT_TESTS_TIMEOUT = 900
 
 
 def sha256_file(path: Path) -> str:
@@ -139,6 +147,8 @@ def check_project_spec(root: Path) -> tuple[bool, str]:
             problems.append(f"{field} must be one non-empty value")
         elif field == "sandbox" and value not in kit.SANDBOX_VALUES:
             problems.append(f"sandbox is {value!r}, expected on or off")
+    if isinstance(spec.get("verification_command"), str) and SKIP_KIT_TESTS in spec["verification_command"]:
+        problems.append(f"verification_command passes {SKIP_KIT_TESTS}; the declared verification runs the kit tests (Decision 0026)")
     for field in ("maintainer", "verification_command"):
         if isinstance(spec.get(field), str) and kit.SPEC_PLACEHOLDER in spec[field]:
             problems.append(f"{field} still holds the placeholder {kit.SPEC_PLACEHOLDER}")
@@ -284,6 +294,25 @@ def check_notice_digests(root: Path) -> tuple[bool, str]:
     return (not problems), ("; ".join(problems) if problems else summary)
 
 
+def check_kit_tests(root: Path) -> tuple[bool, str]:
+    """Decision 0026: run the kit test copies the manifest names and this checkout has, in one python3 -m unittest call.
+    A path the notice marks `skipped` is the target's own file, not the kit's, and is not run."""
+    import kit  # from scripts/
+    notice = root / NOTICE
+    owned = set(_SKIPPED_LINE.findall(notice.read_text(encoding="utf-8"))) if notice.is_file() else set()
+    modules = [entry.target for entry in kit.load_manifest(root)
+               if entry.role == "copy" and _KIT_TEST.fullmatch(entry.target) and entry.target not in owned and (root / entry.target).is_file()]
+    if not modules:
+        return True, "no kit test module in this checkout; nothing to run"
+    run = subprocess.run([sys.executable, "-m", "unittest", *modules], cwd=root, capture_output=True, text=True, timeout=KIT_TESTS_TIMEOUT)
+    ran = _RAN.search(run.stderr)
+    detail = f"{len(modules)} kit test modules ran {ran.group(1) if ran else 0} tests; successful={run.returncode == 0}"
+    if run.returncode != 0:
+        failed = _FAILED_TEST.findall(run.stderr)
+        return False, detail + ("; failing: " + ", ".join(failed) if failed else "; " + (run.stderr.strip().splitlines() or ["no output"])[-1])
+    return True, detail
+
+
 CHECKS = (
     ("kit-settings", check_settings),
     ("kit-hooks-wired", check_hooks),
@@ -293,13 +322,17 @@ CHECKS = (
     ("kit-staged-content", check_staged_content),
     ("kit-task-briefs", check_task_briefs),
     ("kit-notice-digests", check_notice_digests),
+    ("kit-tests", check_kit_tests),
 )
 
 
-def verify(root: Path) -> dict[str, object]:
+def verify(root: Path, skip_kit_tests: bool = False) -> dict[str, object]:
     sys.path.insert(0, str(root / "scripts"))
     checks = []
     for name, function in CHECKS:
+        if skip_kit_tests and function is check_kit_tests:
+            checks.append({"check": name, "passed": True, "detail": f"not run: {SKIP_KIT_TESTS}, the caller runs the kit test modules itself"})
+            continue
         try:
             passed, detail = function(root)
         except Exception as error:  # an unexpected error fails the check, never hides it
@@ -311,8 +344,10 @@ def verify(root: Path) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify a checkout that carries the PAES portable kit.")
     parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument(SKIP_KIT_TESTS, action="store_true",
+                        help="report kit-tests as not run; for a caller that runs the modules itself, refused in the declared verification command")
     args = parser.parse_args(argv)
-    report = verify(args.root.resolve())
+    report = verify(args.root.resolve(), args.skip_kit_tests)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["result"] == "PASS" else 1
 

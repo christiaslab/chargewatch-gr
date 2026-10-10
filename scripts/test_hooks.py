@@ -608,50 +608,62 @@ class ContextGuardTest(HookFixture):
         return {"notebook_path": target} if tool == "NotebookEdit" else {"file_path": target, "content": "x"}
 
     def test_sum_is_taken_from_the_last_assistant_usage_and_below_warn_prints_nothing(self) -> None:
-        early = {"input_tokens": 120_000, "cache_read_input_tokens": 50_000, "cache_creation_input_tokens": 1}
-        last = {"input_tokens": 3, "cache_read_input_tokens": 90_000, "cache_creation_input_tokens": 19_000, "output_tokens": 999_999}
+        early = {"input_tokens": 350_000, "cache_read_input_tokens": 50_000, "cache_creation_input_tokens": 1}
+        last = {"input_tokens": 3, "cache_read_input_tokens": 280_000, "cache_creation_input_tokens": 19_000, "output_tokens": 999_999}
         result = self.guard(self.transcript(early, last), "Write", {"file_path": "README.md"})
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
-        last["cache_creation_input_tokens"] = 20_000  # 110,003: now above the warning, and the figure is the last sum
+        last["cache_creation_input_tokens"] = 20_000  # 300,003: now above the warning, and the figure is the last sum
         output = self.decision(self.guard(self.transcript(early, last), "Read", {"file_path": "README.md"}))
-        self.assertIn("110,003 tokens", output["additionalContext"])
+        self.assertIn("300,003 tokens", output["additionalContext"])
 
     def test_top_level_usage_is_accepted(self) -> None:
         path = self.root / "transcript.jsonl"
-        path.write_text(json.dumps({"type": "assistant", "usage": {"input_tokens": 120_000}}) + "\n", encoding="utf-8")
-        self.assertIn("120,000 tokens", self.decision(self.guard(path, "Bash"))["additionalContext"])
+        path.write_text(json.dumps({"type": "assistant", "usage": {"input_tokens": 320_000}}) + "\n", encoding="utf-8")
+        self.assertIn("320,000 tokens", self.decision(self.guard(path, "Bash"))["additionalContext"])
 
     def test_above_warn_returns_additional_context_with_the_figure(self) -> None:
         for tool in self.DENIED + ("Bash", "Read"):
             with self.subTest(tool=tool):
-                output = self.decision(self.guard(self.window(120_500), tool, self.input_for(tool, "src/app.py")))
+                output = self.decision(self.guard(self.window(310_500), tool, self.input_for(tool, "src/app.py")))
                 self.assertNotIn("permissionDecision", output)
-                self.assertIn("context guard: 120,500 tokens in the window, above 110,000", output["additionalContext"])
+                self.assertIn("context guard: 310,500 tokens in the window, above 300,000", output["additionalContext"])
                 self.assertIn("Decision 0024", output["additionalContext"])
+                self.assertIn("Decision 0027", output["additionalContext"])
+
+    def test_the_old_figures_pass_and_just_below_hard_only_warns(self) -> None:
+        # Decision 0027: 110,000 and 150,000, the figures of the 200,000 window, are now below the warning.
+        for total in (110_000, 150_000, 299_999):
+            with self.subTest(total=total):
+                result = self.guard(self.window(total), "Write", {"file_path": "src/app.py"})
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        output = self.decision(self.guard(self.window(399_999), "Write", {"file_path": "src/app.py"}))
+        self.assertNotIn("permissionDecision", output)
+        self.assertIn("399,999 tokens in the window, above 300,000", output["additionalContext"])
 
     def test_above_hard_denies_write_and_spawn_tools_only(self) -> None:
-        transcript = self.window(160_000)
+        transcript = self.window(410_000)
         for tool in self.DENIED:
             with self.subTest(tool=tool):
                 output = self.decision(self.guard(transcript, tool, self.input_for(tool, "src/app.py")))
                 self.assertEqual(output["permissionDecision"], "deny")
-                self.assertIn("160,000 tokens in the window, above 150,000", output["permissionDecisionReason"])
+                self.assertIn("410,000 tokens in the window, above 400,000", output["permissionDecisionReason"])
                 self.assertIn("python3 scripts/push_increment.py", output["permissionDecisionReason"])
+                self.assertIn("Decision 0027", output["permissionDecisionReason"])
         for tool, tool_input in (("Bash", {"command": "python3 scripts/verify_repository.py"}), ("Read", {"file_path": "src/app.py"})):
             with self.subTest(tool=tool):
                 output = self.decision(self.guard(transcript, tool, tool_input))
                 self.assertNotIn("permissionDecision", output)
-                self.assertIn("160,000 tokens", output["additionalContext"])
+                self.assertIn("410,000 tokens", output["additionalContext"])
 
     def test_above_hard_the_handoff_agents_md_and_a_brief_stay_writable_and_agent_does_not(self) -> None:
-        transcript = self.window(200_000)
+        transcript = self.window(450_000)
         for relative in ("docs/SESSION_HANDOFF_2026-10-07_X.md", "AGENTS.md", "tasks/x.json"):
             for target in (relative, str(self.root / relative)):
                 for tool in ("Write", "Edit", "MultiEdit"):
                     with self.subTest(target=target, tool=tool):
                         output = self.decision(self.guard(transcript, tool, {"file_path": target}))
                         self.assertNotIn("permissionDecision", output)
-                        self.assertIn("200,000 tokens", output["additionalContext"])
+                        self.assertIn("450,000 tokens", output["additionalContext"])
         for target in ("docs/SESSION_HANDOFF_X.txt", "docs/old/SESSION_HANDOFF_X.md", "tasks/sub/x.json", "sub/AGENTS.md",
                        "../AGENTS.md", "/elsewhere/AGENTS.md", "tasks/x.json.bak"):
             with self.subTest(target=target):
@@ -660,7 +672,7 @@ class ContextGuardTest(HookFixture):
         self.assertEqual(agent["permissionDecision"], "deny")
 
     def test_a_symbolic_link_named_like_an_exempt_file_is_judged_by_its_target(self) -> None:
-        transcript = self.window(160_000)
+        transcript = self.window(410_000)
         (self.root / "tasks").mkdir()
         (self.root / "docs").mkdir()
         (self.root / "scripts/x.py").write_text("x = 1\n", encoding="utf-8")
@@ -691,7 +703,7 @@ class ContextGuardTest(HookFixture):
             "missing transcript_path": self.guard(None, "Write", {"file_path": MARKER}),
             "nonexistent file": self.guard(self.root / "absent.jsonl", "Write", {"file_path": MARKER}),
         }
-        cases["malformed line"] = self.guard(self.transcript({"input_tokens": 200_000}, extra=MARKER + " {not json\n"),
+        cases["malformed line"] = self.guard(self.transcript({"input_tokens": 450_000}, extra=MARKER + " {not json\n"),
                                              "Write", {"file_path": MARKER})
         no_usage = self.root / "no-usage.jsonl"
         no_usage.write_text(json.dumps({"type": "assistant", "message": {"content": MARKER}}) + "\n", encoding="utf-8")
