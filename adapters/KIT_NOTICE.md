@@ -1,8 +1,8 @@
 # PAES kit notice
 
 origin: paes
-origin_commit: 7e6629a8222abaa3597681bc3ff791eeda7c897d
-exported: 2026-10-08
+origin_commit: e5bc4d7a88886643dab31d2191a84f742f7e9a4a
+exported: 2026-10-10
 licence: MIT (the exported kit, Decision 0018; full text in the section below)
 copyright: Copyright (c) 2026 Panagiotis Christias
 
@@ -12,7 +12,7 @@ Files below marked with a digest are byte-identical copies of the origin; templa
 
 ## Digests
 
-023b6d483cfea7b8196ea98e8549275b0f59d2bddb7bbcf75cab8a83b4d8109a  adapters/kit-manifest.yaml
+7111f5432b370da661a9b5cbee4a24d37535345e8af59df5d8f9939900e73f59  adapters/kit-manifest.yaml
 template  adapters/project-spec.yaml
 template  .claude/settings.json
 3bf6f5e8f81c810f6d0bce337ee3772db707fdeaf1d5c09e245a74017c64d1db  .claude/skills/commit-guard/SKILL.md
@@ -30,7 +30,7 @@ a955dcf377459e1671bf14678a431f540be2bdf9aa1c12223d7399c778aa5674  scripts/commit
 473afcdbbb28650687873c93330a4db6b4c1c5cca9a04a370a870847390d8bf6  scripts/test_commit_hygiene.py
 d81f4adcd88eda8e20caa06cfa3419d8053b8e76a6d54df0b3ae40cdb8d48a1e  scripts/task_contract.py
 ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_task_contract.py
-d2c304dfd40b1c45b92a3cb0e04d4f4c9a361f49e95ae8b92eee312dc7e41c0f  scripts/kit.py
+716edb09d4cd38a737276d90f2f3a011da182977a6d543427f312f77b7291b5b  scripts/kit.py
 f527ce498a6c77e441925caeaa71e188821fb838f2ad20cae60b8193530370da  scripts/verify_kit.py
 4c8b0044a33f59949650ae26c83ba428c3b585286b9b63d62a3e6754bf39f5fe  scripts/push_increment.py
 ab2393dbed2dd28006700ebb7e6b379d1ec46221719c3abbfac682504e8a68e1  scripts/test_push_increment.py
@@ -48,6 +48,7 @@ The push script, scripts/push_increment.py, creates an increment branch in this 
 
 - 2026-10-08: from origin commit 6d72ca87020e (kit version 12) to cebe25e6c4a5 (kit version 17); files written: 9; owned: none; refused: none
 - 2026-10-08: from origin commit cebe25e6c4a5 (kit version 17) to 7e6629a8222a (kit version 18); files written: 4; owned: none; refused: none
+- 2026-10-10: from origin commit 7e6629a8222a (kit version 18) to e5bc4d7a8888 (kit version 19); files written: 2; owned: none; refused: none
 
 ## Licence
 

@@ -85,7 +85,12 @@
 # asks no code owner to review until the maintainer marks the pull request ready; the installer refuses a source that resolves
 # to the same tree as the target, records the export's digest for a target-owned copy whose bytes equal the export's on
 # upgrade, and warns when a kit test copy tests a target-owned or changed module. No entry changes.
-kit_version: 18
+# Version 19 (2026-10-10, the two upgrade findings of the forty-ninth session, christiaslab/paes#113): `--project-name` is optional;
+# under `--upgrade` an absent name is read from the target's adapters/project-spec.yaml and refused by name when neither gives one,
+# or when the flag is absent without `--upgrade`; the default report of an upgrade is adapters/KIT_UPGRADE_REPORT_<date>_V<version>.md,
+# dated today with the export's kit version, so a second upgrade on the same day at a newer version needs no `--report`; the install
+# default and the never-overwritten rule stay. No entry changes.
+kit_version: 19
 origin: paes
 entries:
   - role: copy

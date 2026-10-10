@@ -40,6 +40,11 @@ as the target, since ``--from`` defaults to the current directory; an upgrade re
 target-owned copy whose bytes equal the export's, so the kit check covers it from then on instead of leaving it
 ``skipped``; and the report warns when a kit test copy (``scripts/test_<name>.py``) tests a module the target owns
 or changed, since ``verify_kit.py`` runs no test module.
+Kit v19 (the two upgrade findings of the forty-ninth session): ``--project-name`` is optional; under ``--upgrade`` an
+absent name is read from the target's ``adapters/project-spec.yaml``, and the installer refuses by name when neither the
+flag nor the specification gives one, or when the flag is absent without ``--upgrade``. The default report of an upgrade
+is ``adapters/KIT_UPGRADE_REPORT_<date>_V<version>.md``, dated today with the export's manifest version, so a second
+upgrade on the same day at a newer version needs no ``--report``; the install default and the never-overwritten rule stay.
 Standard library only.
 """
 from __future__ import annotations
@@ -56,10 +61,11 @@ from pathlib import Path
 MANIFEST = "adapters/kit-manifest.yaml"
 NOTICE = "adapters/KIT_NOTICE.md"
 DEFAULT_REPORT = "adapters/KIT_INSTALL_REPORT.md"
+UPGRADE_REPORT = "adapters/KIT_UPGRADE_REPORT_{date}_V{version}.md"  # kit v19: the default report of an upgrade
 DIGESTS = "adapters/kit-digests.txt"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19")
 # An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
 UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).
@@ -589,8 +595,29 @@ def test_pairs(entries: list[Entry]) -> dict[str, list[str]]:
     return pairs
 
 
-def install(source: Path, target: Path, project_name: str, report_path: Path | None, ci: bool = False,
+def resolve_project_name(target: Path, project_name: str | None, upgrade: bool) -> str:
+    """kit v19, finding 1 of the forty-ninth session: an absent name is read from the target's specification under
+    --upgrade, where the installed specification already carries it; refused by name otherwise, before any write."""
+    if project_name is not None:
+        return project_name
+    if not upgrade:
+        raise ValueError("--project-name is required for an install; only an upgrade reads it from the target's specification")
+    spec = read_spec(target)
+    name = spec.get("project_name") if spec else None
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"--project-name is absent and the target's {SPEC} gives no project_name")
+    return name
+
+
+def default_upgrade_report(source: Path, today: _dt.date | None = None) -> str:
+    """kit v19, finding 2 of the forty-ninth session: the default upgrade report carries the date and the export's manifest
+    version, so a second upgrade on the same day at a newer version needs no --report; a report is still never overwritten."""
+    return UPGRADE_REPORT.format(date=(today or _dt.date.today()).isoformat(), version=manifest_version(source))
+
+
+def install(source: Path, target: Path, project_name: str | None, report_path: Path | None, ci: bool = False,
             upgrade: bool = False, take_as_own: tuple[str, ...] = ()) -> dict[str, object]:
+    project_name = resolve_project_name(target, project_name, upgrade)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", project_name):
         raise ValueError("project name must be 1 to 64 characters of letters, digits, space, dot, underscore or hyphen")
     if source.resolve() == target.resolve():
@@ -844,8 +871,10 @@ def main(argv: list[str] | None = None) -> int:
                          "also replace kit copies still at the installed notice's digest")
     ins.add_argument("--from", dest="source", type=Path, default=Path.cwd(), help="an export directory or the PAES root")
     ins.add_argument("--target", type=Path, required=True)
-    ins.add_argument("--project-name", required=True)
-    ins.add_argument("--report", type=Path, help=f"report file; default <target>/{DEFAULT_REPORT}; never overwritten")
+    ins.add_argument("--project-name", help=f"the target's name; required for an install, read from the target's {SPEC} when "
+                     "absent under --upgrade (kit v19)")
+    ins.add_argument("--report", type=Path, help=f"report file; default <target>/{DEFAULT_REPORT} for an install and "
+                     f"<target>/{UPGRADE_REPORT} for an upgrade, dated today with the export's kit version (kit v19); never overwritten")
     ins.add_argument("--no-report", action="store_true")
     ins.add_argument("--ci", action="store_true", help="also write the CI workflow template of the specification's review backend, when one exists")
     ins.add_argument("--upgrade", action="store_true", help="over an installed kit: overwrite a copy only when it still carries the "
@@ -862,8 +891,14 @@ def main(argv: list[str] | None = None) -> int:
             result = write_digests(args.root.resolve())
         else:
             target = args.target.resolve()
-            report_path = None if args.no_report else (args.report.resolve() if args.report else target / DEFAULT_REPORT)
-            result = install(args.source.resolve(), target, args.project_name, report_path, ci=args.ci, upgrade=args.upgrade,
+            source = args.source.resolve()
+            if args.no_report:
+                report_path = None
+            elif args.report:
+                report_path = args.report.resolve()
+            else:
+                report_path = target / (default_upgrade_report(source) if args.upgrade else DEFAULT_REPORT)
+            result = install(source, target, args.project_name, report_path, ci=args.ci, upgrade=args.upgrade,
                              take_as_own=tuple(args.own))
     except (ValueError, FileNotFoundError, FileExistsError, OSError) as error:
         print(json.dumps({"result": "FAIL", "error": str(error)}, indent=2))
