@@ -100,7 +100,16 @@
 # Version 22 (2026-10-10, Decision 0027): the kit copy of scripts/test_hooks.py asserts the context guard's new thresholds,
 # 300,000 and 400,000 for the 1,000,000-token window, and that the old figures no longer warn; the guard itself stays
 # PAES-only and skipped in a target. No code changes in the kit. No entry changes.
-kit_version: 22
+# Version 23 (2026-10-10, the correction of Decision 0027): the kit copy of scripts/test_hooks.py asserts the context
+# guard's per-role figures, a child session under .claude/worktrees/<slug> at 110,000 and 150,000 and the control room at
+# 300,000 and 400,000, the role read from the payload's cwd; the guard stays PAES-only and skipped in a target. No entry changes.
+# Version 24 (2026-10-10, correction record of 2026-10-10 to Decision 0019): the kit copy of scripts/test_hooks.py
+# asserts that the event feed writes meta.effort only from the closed set low, medium, high, xhigh, max; the feed hook
+# stays PAES-only and its tests skipped in a target. No code changes in the kit. No entry changes.
+# Version 25 (2026-10-11, correction record of 2026-10-11 to Decision 0019): the kit copy of scripts/test_hooks.py
+# asserts that the event feed writes the SessionStart keys meta.cwd and meta.branch; the feed hook stays PAES-only and
+# its tests skipped in a target. No code changes in the kit. No entry changes.
+kit_version: 25
 origin: paes
 entries:
   - role: copy

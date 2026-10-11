@@ -325,6 +325,9 @@ class EventFeedFixture(HookFixture):
     def records(self) -> list[dict]:
         return [json.loads(line) for path in self.feed_files() for line in path.read_text(encoding="utf-8").splitlines()]
 
+    def feed_text(self) -> str:
+        return "\n".join(path.read_text(encoding="utf-8") for path in self.feed_files())
+
     def run_feed(self, payload: object) -> subprocess.CompletedProcess[str]:
         return run_hook(EVENT_FEED, self.root, payload if isinstance(payload, str) else json.dumps(payload))
 
@@ -347,6 +350,7 @@ class EventFeedFixture(HookFixture):
             body.update(last_assistant_message=text, stop_hook_active=False)
         if event == "SessionEnd":
             body["reason"] = text
+        body["effort"] = {"level": text}  # common field; only a level of the closed set is copied (correction 2026-10-10)
         body["unexpected_field"] = text
         body.update(extra)
         return body
@@ -388,6 +392,8 @@ class EventFeedLeakTest(EventFeedFixture):
                     arrived_through.add(key)
         # The constant must arrive through each named field, so the test proves them copied on purpose and no other.
         self.assertEqual(arrived_through, FREE_TEXT_KEYS | COPIED_STRUCTURAL_KEYS)
+        session_start = next(entry for entry in records if entry["event"] == "SessionStart")
+        self.assertEqual((session_start["meta"].get("cwd"), session_start["meta"]["branch"]), (None, ""))  # relative cwd: none recorded (correction 2026-10-11)
         self.assertEqual(len(self.records()), len(payloads))
 
     def test_whitelist_is_closed_per_tool(self) -> None:
@@ -432,9 +438,6 @@ class EventFeedLeakTest(EventFeedFixture):
         self.assertEqual(records[5]["meta"], {"prompt_chars": len(LEAK)})
         self.assertEqual([(r["meta"]["pattern"], r["meta"]["outside_repository"]) for r in records[6:8]], [(None, True), (None, True)])
         self.assertEqual((records[8]["meta"]["subagent_type"], records[8]["meta"]["model"]), (None, "inherited"))
-
-    def feed_text(self) -> str:
-        return "\n".join(path.read_text(encoding="utf-8") for path in self.feed_files())
 
     def test_relative_path_from_a_cwd_inside_the_repository_is_root_relative(self) -> None:
         inside = self.root / "sub" / "dir"
@@ -510,14 +513,59 @@ class EventFeedHermeticTest(EventFeedFixture):
             self.assertRegex(entry["timestamp"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
             self.assertEqual(entry["session"], "session-1")
             self.assertEqual(entry["prompt_id"], "prompt-1")
-        self.assertEqual(records[0]["meta"], {"model": "plain"})  # SessionStart: the session model the payload names
+        # SessionStart: the session model the payload names; the relative cwd "plain" records no cwd and an empty branch
+        self.assertEqual(records[0]["meta"], {"model": "plain", "branch": ""})
         self.run_feed(self.payload("SessionStart", "x", model="not a name"))
-        self.assertEqual(self.records()[-1]["meta"], {})
+        self.assertEqual(self.records()[-1]["meta"], {"branch": ""})
         self.assertEqual(records[1]["meta"], {"prompt_chars": 5})
         self.assertEqual(records[4]["meta"]["error"], "plain")
         self.assertEqual(records[5]["agent"], "agent-1")
         self.assertEqual(records[7]["meta"], {})
         self.assertEqual(records[8]["meta"], {})
+
+    def test_session_start_records_cwd_and_branch_only_in_repository_shape(self) -> None:
+        """Correction record of 2026-10-11 to Decision 0019 point 1: SessionStart carries meta.cwd as "." or a worktree
+        name, never an absolute path, and meta.branch from read-only git, else the empty string."""
+        worktree = self.root / ".claude" / "worktrees" / "wt-example"
+        worktree.mkdir(parents=True)
+        (self.root / "scripts" / "sub").mkdir()
+        outside_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_tmp.cleanup)
+        outside = Path(outside_tmp.name).resolve() / ("outside-" + LEAK)
+        outside.mkdir()
+        cases = (
+            (str(self.root), {"model": "m", "cwd": ".", "branch": "main"}),
+            (str(self.root / "scripts" / "sub"), {"model": "m", "cwd": ".", "branch": "main"}),
+            (str(worktree), {"model": "m", "cwd": "wt-example", "branch": "main"}),
+            (str(self.root / ".claude" / "worktrees" / "has space"), {"model": "m", "branch": ""}),
+            (str(outside), {"model": "m", "branch": ""}),
+            ("scripts", {"model": "m", "branch": ""}),
+            (None, {"model": "m", "branch": ""}),
+            (7, {"model": "m", "branch": ""}),
+        )
+        for cwd, _ in cases:
+            self.assertEqual(self.run_feed(self.payload("SessionStart", "x", model="m", cwd=cwd, effort=None)).returncode, 0, cwd)
+        records = self.records()
+        self.assertEqual([entry["meta"] for entry in records], [expected for _, expected in cases])
+        self.assertEqual(list(records[0]["meta"]), ["model", "cwd", "branch"])
+        self.run_feed(self.payload("SessionStart", "x", model="m", cwd=str(self.root), effort={"level": "high"}))
+        self.assertEqual(list(self.records()[-1]["meta"]), ["model", "cwd", "branch", "effort"])
+        # git not found: PATH names an empty directory, so the branch is the empty string and the hook still exits 0
+        empty_path = tempfile.TemporaryDirectory()
+        self.addCleanup(empty_path.cleanup)
+        env = {**GIT_ENV, "CLAUDE_PROJECT_DIR": str(self.root), "PATH": empty_path.name}
+        result = subprocess.run([sys.executable, str(EVENT_FEED)], input=json.dumps(self.payload("SessionStart", "x", cwd=str(self.root), effort=None)),
+                                cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        self.assertEqual(self.records()[-1]["meta"], {"model": "x", "cwd": ".", "branch": ""})
+        # no other event carries cwd or branch, whatever cwd the payload names
+        for event in ("PreToolUse", "Stop", "SubagentStart", "UserPromptSubmit"):
+            self.run_feed(self.payload(event, "x", cwd=str(self.root)))
+        for entry in self.records()[-4:]:
+            self.assertNotIn("cwd", entry["meta"], entry["event"])
+            self.assertNotIn("branch", entry["meta"], entry["event"])
+        self.assertNotIn(LEAK, self.feed_text())
+        self.assertNotIn(str(self.root), self.feed_text())
 
     def test_model_is_never_null_on_a_dispatch_record(self) -> None:
         cases = {
@@ -543,6 +591,31 @@ class EventFeedHermeticTest(EventFeedFixture):
                 self.assertIsInstance(entry["meta"].get("model"), str)
                 self.assertTrue(entry["meta"]["model"])
                 self.assertEqual(entry["meta"]["model"], expected)
+
+    def test_effort_is_written_only_from_the_closed_set(self) -> None:
+        """Correction record of 2026-10-10 to Decision 0019 point 1: meta.effort from the payload's effort.level, on
+        any admitted event, only when the level is one of the closed set; any other value is dropped, never clipped."""
+        levels = ("low", "medium", "high", "xhigh", "max")
+        events = ("SessionStart", "PreToolUse", "PostToolUse", "SubagentStart", "Stop")
+        for level, event in zip(levels, events):
+            self.run_feed(self.payload(event, "x", "Bash", effort={"level": level}))
+        dropped = ({"level": "High"}, {"level": "ultra"}, {"level": "high "}, {"level": ""}, {"level": None},
+                   {"level": 3}, {"level": ["high"]}, {"level": {"high": True}}, {}, "high", ["high"], None,
+                   {"level": LEAK}, {"high": "high"})
+        for value in dropped:
+            self.assertEqual(self.run_feed(self.payload("PreToolUse", "x", "Read", effort=value)).returncode, 0, value)
+        self.run_feed(self.payload("Stop", "x", effort=None) | {"effort": {"level": "high"}, "hook_event_name": "Notification"})
+        records = self.records()
+        self.assertEqual(len(records), len(levels) + len(dropped) + 1)
+        self.assertEqual([entry["meta"].get("effort") for entry in records[:len(levels)]], list(levels))
+        for entry in records[len(levels):]:
+            self.assertNotIn("effort", entry["meta"])
+        self.assertEqual(records[-1]["meta"], {"unparsed": True})  # an event outside the nine copies nothing
+        self.assertNotIn(LEAK, self.feed_text())
+        spec = importlib.util.spec_from_file_location("event_feed", EVENT_FEED)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.EFFORT_LEVELS, frozenset(levels))
 
     def test_unparsed_payload_produces_one_record_without_content(self) -> None:
         for raw in ("{not json", json.dumps([LEAK]), json.dumps("x"), ""):
@@ -590,10 +663,13 @@ class ContextGuardTest(HookFixture):
     def window(self, total: int) -> Path:
         return self.transcript({"input_tokens": 10, "cache_read_input_tokens": total - 1010, "cache_creation_input_tokens": 1000})
 
-    def guard(self, transcript: Path | None, tool: str, tool_input: dict | None = None) -> subprocess.CompletedProcess[str]:
+    def guard(self, transcript: Path | None, tool: str, tool_input: dict | None = None,
+              cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input or {}}
         if transcript is not None:
             payload["transcript_path"] = str(transcript)
+        if cwd is not None:
+            payload["cwd"] = str(cwd)
         return run_hook(CONTEXT_GUARD, self.root, json.dumps(payload))
 
     def decision(self, result: subprocess.CompletedProcess[str]) -> dict:
@@ -689,6 +765,68 @@ class ContextGuardTest(HookFixture):
         for target in ("tasks/real.json", "docs/SESSION_HANDOFF_new.md"):
             with self.subTest(target=target):
                 self.assertNotIn("permissionDecision", self.decision(self.guard(transcript, "Edit", {"file_path": target})))
+
+    def child(self, *parts: str) -> Path:
+        checkout = self.root.joinpath(".claude", "worktrees", "slug", *parts)
+        checkout.mkdir(parents=True)
+        return checkout
+
+    def test_a_child_checkout_keeps_the_0024_figures(self) -> None:
+        # Decision 0027 correction: a session whose cwd is under .claude/worktrees/ is a child; it warns at 110,000
+        # and denies at 150,000, while the control room (the fixture root) only reaches its warning at 300,000.
+        child = self.child()
+        quiet = self.guard(self.window(109_999), "Write", {"file_path": "src/app.py"}, cwd=child)
+        self.assertEqual((quiet.returncode, quiet.stdout, quiet.stderr), (0, "", ""))
+        warned = self.decision(self.guard(self.window(120_500), "Write", {"file_path": "src/app.py"}, cwd=child))
+        self.assertNotIn("permissionDecision", warned)
+        self.assertIn("120,500 tokens in the window, above 110,000 for a child session", warned["additionalContext"])
+        for tool in self.DENIED:
+            with self.subTest(tool=tool):
+                output = self.decision(self.guard(self.window(160_000), tool, self.input_for(tool, "src/app.py"), cwd=child))
+                self.assertEqual(output["permissionDecision"], "deny")
+                reason = output["permissionDecisionReason"]
+                self.assertIn("160,000 tokens in the window, above 150,000 for a child session", reason)
+                self.assertIn("start_session", reason)
+                self.assertIn("never a fork", reason)
+                self.assertIn("control room", reason)
+        control = self.guard(self.window(160_000), "Write", {"file_path": "src/app.py"}, cwd=self.root)
+        self.assertEqual((control.returncode, control.stdout, control.stderr), (0, "", ""))
+
+    def test_the_control_room_figures_name_the_role(self) -> None:
+        warned = self.decision(self.guard(self.window(310_500), "Write", {"file_path": "src/app.py"}, cwd=self.root))
+        self.assertIn("above 300,000 for the control room", warned["additionalContext"])
+        denied = self.decision(self.guard(self.window(410_000), "Write", {"file_path": "src/app.py"}, cwd=self.root))
+        self.assertIn("above 400,000 for the control room", denied["permissionDecisionReason"])
+
+    def test_the_role_is_read_from_whole_path_components(self) -> None:
+        transcript = self.window(160_000)
+        for parts in ((), ("sub", "dir")):  # .claude/worktrees in the middle of a deeper cwd is still a child
+            with self.subTest(child=parts):
+                cwd = self.child(*parts) if parts else self.root / ".claude/worktrees/slug"
+                cwd.mkdir(parents=True, exist_ok=True)
+                self.assertEqual(self.decision(self.guard(transcript, "Write", {"file_path": "x.py"}, cwd=cwd))["permissionDecision"], "deny")
+        for relative in (".claude/worktrees", "x.claude/worktrees/slug", ".claude/worktrees-old/slug", "claude/worktrees/slug"):
+            with self.subTest(control=relative):
+                cwd = self.root / relative
+                cwd.mkdir(parents=True, exist_ok=True)
+                result = self.guard(transcript, "Write", {"file_path": "x.py"}, cwd=cwd)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        for cwd in ("", "relative/.claude/worktrees/slug"):  # not an absolute path: the project directory decides
+            with self.subTest(cwd=cwd):
+                payload = {"tool_name": "Write", "tool_input": {"file_path": "x.py"}, "transcript_path": str(transcript), "cwd": cwd}
+                result = run_hook(CONTEXT_GUARD, self.root, json.dumps(payload))
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+
+    def test_a_child_at_its_hard_limit_writes_its_own_hand_off_and_brief(self) -> None:
+        child = self.child()
+        transcript = self.window(160_000)
+        for relative in ("docs/SESSION_HANDOFF_2026-10-10_X.md", "AGENTS.md", "tasks/x.json"):
+            for target in (relative, str(child / relative)):
+                with self.subTest(target=target):
+                    self.assertNotIn("permissionDecision", self.decision(self.guard(transcript, "Write", {"file_path": target}, cwd=child)))
+        for target in (str(self.root / "AGENTS.md"), str(child / "src/app.py")):  # the primary checkout is outside the child
+            with self.subTest(target=target):
+                self.assertEqual(self.decision(self.guard(transcript, "Write", {"file_path": target}, cwd=child))["permissionDecision"], "deny")
 
     def assert_fails_open(self, result: subprocess.CompletedProcess[str]) -> None:
         self.assertEqual(result.returncode, 0)

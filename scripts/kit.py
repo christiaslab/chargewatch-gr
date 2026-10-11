@@ -66,7 +66,7 @@ UPGRADE_REPORT = "adapters/KIT_UPGRADE_REPORT_{date}_V{version}.md"  # kit v19: 
 DIGESTS = "adapters/kit-digests.txt"
 SETTINGS = ".claude/settings.json"
 PROPOSED_SETTINGS = ".claude/settings.proposed.json"
-KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22")
+KIT_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25")
 # An installer knows the manifest versions up to its own; a newer export is installed with the kit.py it ships (kit v11).
 UPGRADE_NOTE = "a newer export is installed with the kit.py it ships, not with the installed one"
 # Where a target configures ruff, in the order the installer looks (kit v8, finding 1 of the fourth chargewatch-gr trial).

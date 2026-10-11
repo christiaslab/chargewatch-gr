@@ -1,8 +1,8 @@
 # PAES kit notice
 
 origin: paes
-origin_commit: ecf63cd21d5f4e4d3ac73cbdc3af9a99d331db5d
-exported: 2026-10-10
+origin_commit: 84e3dd371825dbdec864fcb9e8f9e789c515a246
+exported: 2026-10-11
 licence: MIT (the exported kit, Decision 0018; full text in the section below)
 copyright: Copyright (c) 2026 Panagiotis Christias
 
@@ -12,7 +12,7 @@ Files below marked with a digest are byte-identical copies of the origin; templa
 
 ## Digests
 
-8b6b2add78c35a2463cb3df1c797d8496d8aeb9c106762e81a8d7a28c1c5d51c  adapters/kit-manifest.yaml
+6b7273682cff4e6df3aa78e01b497ddf946ce4b838f073f90606ca0ab74375b2  adapters/kit-manifest.yaml
 template  adapters/project-spec.yaml
 template  .claude/settings.json
 3bf6f5e8f81c810f6d0bce337ee3772db707fdeaf1d5c09e245a74017c64d1db  .claude/skills/commit-guard/SKILL.md
@@ -21,7 +21,7 @@ template  .claude/skills/publish-increment/SKILL.md
 template  AGENTS.md
 6b606150f8cca139f7df50a391261780fb6c86ece5d0f70863457211ba1f5ce1  scripts/hooks/session_start.py
 ff01e4eb1927897ec3427e37e3be89dd11eb4a8792031f639ea36309cefc0d0c  scripts/hooks/pre_tool_secrets_guard.py
-dc2fee25ecefc0434726697c0b297f9e0b6aa386c8073d2131d86de06d94fe13  scripts/test_hooks.py
+31c53c6c17e92f0cb658fa8a19dad9b2abe3acce144cfedb20c502960fe46b31  scripts/test_hooks.py
 31a907772711bbc69804c838905b41ae99d27a3f0bb85f0cb4623db9debf497f  scripts/commit_guard.py
 2af9569858100552e4eacd7398f4760a00f80247824fe90b963cb3533c772c36  scripts/pilot_core.py
 71a0f85e373f5e8123638f66b09aa89c7932470f859d172d2b79c57df70bea9a  scripts/commit_rules.py
@@ -30,7 +30,7 @@ a955dcf377459e1671bf14678a431f540be2bdf9aa1c12223d7399c778aa5674  scripts/commit
 473afcdbbb28650687873c93330a4db6b4c1c5cca9a04a370a870847390d8bf6  scripts/test_commit_hygiene.py
 d81f4adcd88eda8e20caa06cfa3419d8053b8e76a6d54df0b3ae40cdb8d48a1e  scripts/task_contract.py
 ed0c35c07f7a5c6dfa98db6a7e92d94457928e0fbceccb277862c7d69701c617  scripts/test_task_contract.py
-47d319c04cdc6fb198c7a39c2901f5cc970913d37356297023126323af8cac2e  scripts/kit.py
+a0a5dcbad13772e6366d7799a52711bae56686f8aacba9b8fe0315610756cce9  scripts/kit.py
 6c728147819690964cf7d62970f004495dec6996fdc738a6fdc6753b6aa003ec  scripts/verify_kit.py
 4c8b0044a33f59949650ae26c83ba428c3b585286b9b63d62a3e6754bf39f5fe  scripts/push_increment.py
 ab2393dbed2dd28006700ebb7e6b379d1ec46221719c3abbfac682504e8a68e1  scripts/test_push_increment.py
@@ -50,6 +50,7 @@ The push script, scripts/push_increment.py, creates an increment branch in this 
 - 2026-10-08: from origin commit cebe25e6c4a5 (kit version 17) to 7e6629a8222a (kit version 18); files written: 4; owned: none; refused: none
 - 2026-10-10: from origin commit 7e6629a8222a (kit version 18) to e5bc4d7a8888 (kit version 19); files written: 2; owned: none; refused: none
 - 2026-10-10: from origin commit e5bc4d7a8888 (kit version 19) to ecf63cd21d5f (kit version 22); files written: 5; owned: none; refused: none
+- 2026-10-11: from origin commit ecf63cd21d5f (kit version 22) to 84e3dd371825 (kit version 25); files written: 3; owned: none; refused: none
 
 ## Licence
 
