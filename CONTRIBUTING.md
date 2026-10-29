@@ -55,7 +55,6 @@ say in the pull request what conflicts instead.
 
 - `main` accepts changes only through a pull request with one approving review and a
   green `test` check. History stays linear; merges are rebase merges.
-- `CODEOWNERS` requests a review from the maintainers automatically.
 - The maintainer merges. Do not merge your own pull request.
 
 ## Reporting a vulnerability
